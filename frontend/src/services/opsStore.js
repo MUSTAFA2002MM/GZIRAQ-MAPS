@@ -8,13 +8,17 @@ const API_URL =
 const DEFAULT_COMPANY = {
   lat: 33.3152,
   lng: 44.3661,
-  radiusMeters: 20,
+  radiusMeters: 100,
   autoCheckoutHour: 23,
   name: "موقع الشركة",
+  requireGeofence: true,
 };
 
 function todayKey(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function createDefaultOps() {
@@ -51,6 +55,7 @@ function normalizeCompany(company) {
       ? radiusMeters
       : DEFAULT_COMPANY.radiusMeters,
     name: String(source.name || DEFAULT_COMPANY.name).trim() || DEFAULT_COMPANY.name,
+    requireGeofence: source.requireGeofence !== false,
   };
 }
 
@@ -199,7 +204,7 @@ export const opsApi = {
     return store.company;
   },
 
-  async setCompany({ lat, lng, radiusMeters, name }) {
+  async setCompany({ lat, lng, radiusMeters, name, requireGeofence }) {
     const store = await syncOpsFromServer();
     const nextLat = Number(lat);
     const nextLng = Number(lng);
@@ -215,6 +220,10 @@ export const opsApi = {
       lng: nextLng,
       radiusMeters: Number.isFinite(nextRadius) ? nextRadius : store.company.radiusMeters,
       name: name !== undefined ? name : store.company.name,
+      requireGeofence:
+        requireGeofence !== undefined
+          ? Boolean(requireGeofence)
+          : store.company.requireGeofence !== false,
     });
 
     await saveOps(store);
@@ -554,18 +563,24 @@ export const opsApi = {
     const store = await syncOpsFromServer();
     const company = store.company;
 
-    if (!location) {
-      return fail("الموقع مطلوب للحضور");
+    if (!location || !Number.isFinite(Number(location.lat)) || !Number.isFinite(Number(location.lng))) {
+      return fail("الموقع مطلوب للحضور. فعّل GPS وانتظر تحديد موقعك");
     }
 
     const meters = distanceMeters(
-      { lat: location.lat, lng: location.lng },
+      { lat: Number(location.lat), lng: Number(location.lng) },
       { lat: company.lat, lng: company.lng }
     );
 
-    if (meters > company.radiusMeters) {
+    const accuracy = Number(location.accuracy);
+    const accuracyBuffer = Number.isFinite(accuracy)
+      ? Math.min(Math.max(accuracy, 0), 150)
+      : 50;
+    const allowedRadius = Number(company.radiusMeters) + accuracyBuffer;
+
+    if (company.requireGeofence !== false && meters > allowedRadius) {
       return fail(
-        `يجب أن تكون داخل نطاق الشركة (${company.radiusMeters} متر). بعدك الآن ${Math.round(meters)} م`
+        `يجب الاقتراب من موقع الشركة. المسافة الحالية ${Math.round(meters)}م (المسموح ≈ ${Math.round(allowedRadius)}م)`
       );
     }
 
@@ -586,6 +601,8 @@ export const opsApi = {
         person_name: personName,
         check_in: null,
         check_out: null,
+        check_in_distance: null,
+        check_out_distance: null,
       };
       store.attendance.unshift(record);
     }
@@ -598,15 +615,24 @@ export const opsApi = {
       }
       record.check_in = now;
       record.check_out = null;
+      record.check_in_distance = Math.round(meters);
+      record.check_out_distance = null;
     } else {
       if (!record.check_in) {
         return fail("سجّل الدخول أولًا");
       }
       record.check_out = now;
+      record.check_out_distance = Math.round(meters);
     }
 
     await saveOps(store);
-    return ok({ attendance: record, message: "تم تسجيل الحضور" });
+    return ok({
+      attendance: record,
+      message:
+        action === "in"
+          ? `تم تسجيل الدخول · المسافة ${Math.round(meters)}م`
+          : `تم تسجيل الخروج · المسافة ${Math.round(meters)}م`,
+    });
   },
 
   async getAttendance({ day = "today", personType } = {}) {

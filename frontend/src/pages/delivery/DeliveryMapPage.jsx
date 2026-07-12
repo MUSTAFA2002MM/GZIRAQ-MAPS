@@ -66,6 +66,7 @@ export default function DeliveryMapPage() {
         const next = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
         };
         setLocation(next);
         setTrack((current) => [...current.slice(-80), [next.lat, next.lng]]);
@@ -130,7 +131,30 @@ export default function DeliveryMapPage() {
   };
 
   const clock = async (action) => {
-    if (!location) {
+    let current = location;
+
+    if (!current && navigator.geolocation) {
+      try {
+        current = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (position) =>
+              resolve({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+              }),
+            reject,
+            { enableHighAccuracy: true, timeout: 15000 }
+          );
+        });
+        setLocation(current);
+      } catch {
+        setMessage("فعّل إذن الموقع وسجّل وأنت عند الشركة");
+        return;
+      }
+    }
+
+    if (!current) {
       setMessage("انتظر تحديد الموقع");
       return;
     }
@@ -140,7 +164,7 @@ export default function DeliveryMapPage() {
       personId: user.id,
       personName: user.name,
       action,
-      location,
+      location: current,
     });
 
     setMessage(result.data.message || (result.ok ? "تم" : "فشل"));
@@ -164,8 +188,14 @@ export default function DeliveryMapPage() {
 
       <div className="attendance-box">
         <strong>
-          الحضور (داخل الشركة {company?.radiusMeters ?? 20}م)
+          الحضور (نطاق الشركة {company?.radiusMeters ?? 100}م
+          {company?.requireGeofence === false ? " · بدون تحقق موقع" : ""})
         </strong>
+        <p className="empty-hint" style={{ marginTop: 8 }}>
+          {location
+            ? `الموقع جاهز · دقة ≈ ${Math.round(location.accuracy || 0)}م`
+            : "جارٍ تحديد موقعك..."}
+        </p>
         <div className="form-buttons" style={{ marginTop: 10 }}>
           <button className="primary-button" type="button" onClick={() => clock("in")}>
             تسجيل دخول

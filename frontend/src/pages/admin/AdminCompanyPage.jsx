@@ -45,7 +45,8 @@ export default function AdminCompanyPage() {
     name: "موقع الشركة",
     lat: "",
     lng: "",
-    radiusMeters: "20",
+    radiusMeters: "100",
+    requireGeofence: true,
   });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -64,7 +65,8 @@ export default function AdminCompanyPage() {
       name: current.name || "موقع الشركة",
       lat: String(current.lat),
       lng: String(current.lng),
-      radiusMeters: String(current.radiusMeters || 20),
+      radiusMeters: String(current.radiusMeters || 100),
+      requireGeofence: current.requireGeofence !== false,
     });
   };
 
@@ -82,8 +84,11 @@ export default function AdminCompanyPage() {
   }, [form.lat, form.lng]);
 
   const onChange = (event) => {
-    const { name, value } = event.target;
-    setForm((current) => ({ ...current, [name]: value }));
+    const { name, value, type, checked } = event.target;
+    setForm((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? checked : value,
+    }));
   };
 
   const onPick = (lat, lng) => {
@@ -119,6 +124,7 @@ export default function AdminCompanyPage() {
       lat: form.lat,
       lng: form.lng,
       radiusMeters: form.radiusMeters,
+      requireGeofence: form.requireGeofence,
     });
     setSaving(false);
 
@@ -185,16 +191,36 @@ export default function AdminCompanyPage() {
             <input name="name" value={form.name} onChange={onChange} required />
           </label>
           <label className="input-group">
-            <span>نطاق الحضور (متر)</span>
+            <span>نطاق الحضور (متر) — يُفضّل 100 أو أكثر</span>
             <input
               name="radiusMeters"
               type="number"
-              min="5"
-              max="500"
+              min="20"
+              max="2000"
               value={form.radiusMeters}
               onChange={onChange}
               required
             />
+          </label>
+          <label className="input-group" style={{ justifyContent: "center" }}>
+            <span>التحقق من موقع الشركة عند الحضور</span>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 10,
+                fontWeight: 700,
+              }}
+            >
+              <input
+                type="checkbox"
+                name="requireGeofence"
+                checked={form.requireGeofence}
+                onChange={onChange}
+              />
+              تفعيل التحقق الجغرافي
+            </label>
           </label>
           <label className="input-group">
             <span>Latitude</span>

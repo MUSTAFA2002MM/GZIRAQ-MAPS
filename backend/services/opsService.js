@@ -10,9 +10,10 @@ function createDefaultOps() {
     company: {
       lat: 33.3152,
       lng: 44.3661,
-      radiusMeters: 20,
+      radiusMeters: 100,
       autoCheckoutHour: 23,
       name: "موقع الشركة",
+      requireGeofence: true,
     },
     agents: [],
     employees: [],
@@ -46,6 +47,7 @@ function normalizeCompany(company) {
         ? radiusMeters
         : defaults.radiusMeters,
     name: String(source.name || defaults.name).trim() || defaults.name,
+    requireGeofence: source.requireGeofence !== false,
   };
 }
 
