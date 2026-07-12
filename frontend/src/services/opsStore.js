@@ -635,11 +635,25 @@ export const opsApi = {
     });
   },
 
-  async getAttendance({ day = "today", month, personType } = {}) {
+  async getAttendance({ day = "today", month, months, personType } = {}) {
     const store = await syncOpsFromServer();
     let rows = store.attendance || [];
 
-    if (month) {
+    if (months) {
+      const count = Math.max(1, Number(months) || 2);
+      const allowed = new Set();
+      const now = new Date();
+
+      for (let index = 0; index < count; index += 1) {
+        const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
+        const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        allowed.add(value);
+      }
+
+      rows = rows.filter((item) =>
+        allowed.has(String(item.day || "").slice(0, 7))
+      );
+    } else if (month) {
       const monthKey = String(month).slice(0, 7);
       rows = rows.filter((item) => String(item.day || "").startsWith(monthKey));
     } else if (day === "all") {
@@ -668,6 +682,7 @@ export const opsApi = {
       attendance: rows,
       day: month || day,
       month: month || null,
+      months: months || null,
     });
   },
 

@@ -23,29 +23,6 @@ function formatDate(value) {
   }
 }
 
-function currentMonthValue(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
-function buildMonthOptions(count = 12) {
-  const options = [];
-  const now = new Date();
-
-  for (let index = 0; index < count; index += 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
-    const value = currentMonthValue(date);
-    const label = date.toLocaleDateString("ar-IQ", {
-      month: "long",
-      year: "numeric",
-    });
-    options.push({ value, label });
-  }
-
-  return options;
-}
-
 function roleLabel(type) {
   if (type === "delivery") return "مندوب";
   if (type === "employee") return "موظف";
@@ -59,20 +36,13 @@ function statusLabel(row) {
 }
 
 export default function AdminAttendancePage() {
-  const [rangeMode, setRangeMode] = useState("month");
-  const [month, setMonth] = useState(currentMonthValue());
-  const [day, setDay] = useState("today");
   const [personType, setPersonType] = useState("all");
   const [rows, setRows] = useState([]);
   const [message, setMessage] = useState("");
-  const monthOptions = useMemo(() => buildMonthOptions(12), []);
 
   const load = async () => {
     setMessage("");
-    const result =
-      rangeMode === "month"
-        ? await opsApi.getAttendance({ month })
-        : await opsApi.getAttendance({ day });
+    const result = await opsApi.getAttendance({ months: 2 });
 
     if (!result.ok) {
       setMessage(result.data.message || "تعذر تحميل الحضور");
@@ -87,7 +57,7 @@ export default function AdminAttendancePage() {
     load();
     const timer = setInterval(load, 30000);
     return () => clearInterval(timer);
-  }, [rangeMode, month, day]);
+  }, []);
 
   const filtered = useMemo(() => {
     let list = [...rows];
@@ -126,35 +96,9 @@ export default function AdminAttendancePage() {
       <header className="panel-header">
         <div>
           <h2>قائمة الحضور</h2>
-          <p>سجلات شهر كامل للموظفين والمندوبين مع وقت الدخول والانصراف</p>
+          <p>جميع سجلات الشهر الحالي والشهر السابق مع وقت الدخول والانصراف</p>
         </div>
         <div className="topbar-actions">
-          <select
-            value={rangeMode}
-            onChange={(event) => setRangeMode(event.target.value)}
-          >
-            <option value="month">شهر كامل</option>
-            <option value="day">يوم محدد</option>
-          </select>
-
-          {rangeMode === "month" ? (
-            <select
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
-            >
-              {monthOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <select value={day} onChange={(event) => setDay(event.target.value)}>
-              <option value="today">اليوم</option>
-              <option value="yesterday">أمس</option>
-            </select>
-          )}
-
           <select
             value={personType}
             onChange={(event) => setPersonType(event.target.value)}
@@ -173,7 +117,7 @@ export default function AdminAttendancePage() {
 
       <div className="stats-grid" style={{ marginBottom: 18 }}>
         <article className="stat-card">
-          <span>سجلات الفترة</span>
+          <span>سجلات شهرين</span>
           <strong>{summary.total}</strong>
         </article>
         <article className="stat-card">
@@ -208,7 +152,7 @@ export default function AdminAttendancePage() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={6} className="empty-hint">
-                  لا توجد سجلات حضور لهذه الفترة
+                  لا توجد سجلات حضور خلال الشهرين الأخيرين
                 </td>
               </tr>
             ) : (
