@@ -39,8 +39,9 @@ export default function DeliveryMapPage() {
     location,
     geoStatus,
     geoMessage,
+    insecure,
     refreshLocation,
-  } = useDeviceLocation();
+  } = useDeviceLocation({ auto: true, intervalMs: 5000 });
 
   const loadOrders = async () => {
     const result = await opsApi.listOrders({ day, agentId: user?.id });
@@ -68,24 +69,35 @@ export default function DeliveryMapPage() {
   }, [day, user?.id]);
 
   useEffect(() => {
-    if (!location || !user?.id) return undefined;
-
-    setTrack((current) => [...current.slice(-80), [location.lat, location.lng]]);
+    if (!user?.id) return undefined;
 
     let cancelled = false;
 
-    const syncLiveLocation = async () => {
+    const pushLocation = async (point) => {
+      if (!point || cancelled) return;
       await opsApi.updateAgentLocation({
         agentId: user.id,
         agentName: user.name,
-        lat: location.lat,
-        lng: location.lng,
-        accuracy: location.accuracy,
+        lat: point.lat,
+        lng: point.lng,
+        accuracy: point.accuracy,
       });
     };
 
-    const markNearby = async () => {
-      const result = await opsApi.listOrders({ day, agentId: user?.id });
+    const syncCycle = async () => {
+      let point = location;
+      try {
+        point = await refreshLocation();
+      } catch {
+        point = location;
+      }
+
+      if (!point) return;
+
+      setTrack((current) => [...current.slice(-80), [point.lat, point.lng]]);
+      await pushLocation(point);
+
+      const result = await opsApi.listOrders({ day, agentId: user.id });
       const list = result.data.orders || [];
       for (const order of list) {
         if (
@@ -93,41 +105,32 @@ export default function DeliveryMapPage() {
           Number.isFinite(order.latitude) &&
           Number.isFinite(order.longitude)
         ) {
-          const meters = opsApi.distanceMeters(location, {
+          const meters = opsApi.distanceMeters(point, {
             lat: order.latitude,
             lng: order.longitude,
           });
           if (meters <= DELIVERY_RADIUS_METERS) {
             await opsApi.updateOrderStatus(order.id, {
               status: "nearby",
-              agentLocation: location,
+              agentLocation: point,
             });
           }
         }
       }
+
       if (!cancelled) {
         await loadOrders();
       }
     };
 
-    syncLiveLocation();
-    markNearby();
-
-    const timer = setInterval(() => {
-      opsApi.updateAgentLocation({
-        agentId: user.id,
-        agentName: user.name,
-        lat: location.lat,
-        lng: location.lng,
-        accuracy: location.accuracy,
-      });
-    }, 8000);
+    syncCycle();
+    const timer = setInterval(syncCycle, 5000);
 
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [location?.lat, location?.lng, day, user?.id, user?.name]);
+  }, [day, user?.id, user?.name]);
 
   const openOrders = useMemo(
     () =>
@@ -260,6 +263,9 @@ export default function DeliveryMapPage() {
         </strong>
         <p className="empty-hint" style={{ marginTop: 8 }}>
           {geoMessage}
+          {insecure
+            ? " · افتح https://129.121.93.45 بعد تفعيل HTTPS حتى يعمل التتبع التلقائي"
+            : ""}
         </p>
         <div className="form-buttons" style={{ marginTop: 10 }}>
           <button

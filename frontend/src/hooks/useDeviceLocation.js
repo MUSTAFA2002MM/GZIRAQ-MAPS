@@ -1,8 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+function positionFromEvent(position) {
+  return {
+    lat: position.coords.latitude,
+    lng: position.coords.longitude,
+    accuracy: position.coords.accuracy,
+    updatedAt: Date.now(),
+  };
+}
 
 export function readPosition(options = {}) {
   const timeout = options.timeout ?? 12000;
-  const allowInsecure = options.allowInsecure !== false;
 
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -10,28 +18,13 @@ export function readPosition(options = {}) {
       return;
     }
 
-    if (!window.isSecureContext && !allowInsecure) {
-      reject(
-        new Error(
-          "المتصفح يمنع GPS على HTTP. يمكنك تسجيل الحضور مباشرة بدون GPS"
-        )
-      );
-      return;
-    }
-
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        });
-      },
+      (position) => resolve(positionFromEvent(position)),
       (error) => {
         if (!window.isSecureContext) {
           reject(
             new Error(
-              "تعذر GPS على HTTP. للتتبع والتسليم بدقة استخدم متصفحًا يسمح بالموقع أو HTTPS"
+              "المتصفح يمنع GPS على HTTP. افتح الموقع عبر HTTPS ثم اسمح بالموقع"
             )
           );
           return;
@@ -39,7 +32,7 @@ export function readPosition(options = {}) {
         if (error?.code === 1) {
           reject(new Error("يجب السماح بإذن الموقع من إعدادات المتصفح"));
         } else if (error?.code === 3) {
-          reject(new Error("انتهت مهلة تحديد الموقع. حاول مرة أخرى"));
+          reject(new Error("انتهت مهلة تحديد الموقع. سيتم إعادة المحاولة تلقائيًا"));
         } else {
           reject(new Error("تعذر قراءة الموقع حاليًا"));
         }
@@ -47,77 +40,89 @@ export function readPosition(options = {}) {
       {
         enableHighAccuracy: true,
         timeout,
-        maximumAge: 3000,
+        maximumAge: 2000,
       }
     );
   });
 }
 
-export function useDeviceLocation() {
+export function useDeviceLocation({ auto = true, intervalMs = 5000 } = {}) {
   const [location, setLocation] = useState(null);
   const [geoStatus, setGeoStatus] = useState("loading");
-  const [geoMessage, setGeoMessage] = useState("جارٍ تحديد موقعك...");
+  const [geoMessage, setGeoMessage] = useState("جارٍ التحديث التلقائي للموقع...");
   const insecure = typeof window !== "undefined" && !window.isSecureContext;
+  const locationRef = useRef(null);
 
   useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
+
+  useEffect(() => {
+    if (!auto) return undefined;
+
     if (!navigator.geolocation) {
       setGeoStatus("unavailable");
       setGeoMessage("المتصفح لا يدعم GPS");
       return undefined;
     }
 
-    let settled = false;
-    const failTimer = setTimeout(() => {
-      if (!settled) {
-        setGeoStatus((current) => (current === "ready" ? current : "timeout"));
-        setGeoMessage(
-          insecure
-            ? "GPS ضعيف على HTTP — اسمح بالموقع إن ظهر الطلب، أو جرّب متصفحًا آخر"
-            : "تعذر تثبيت الموقع بسرعة — اضغط إعادة محاولة GPS"
-        );
+    let alive = true;
+
+    const applySuccess = (next) => {
+      if (!alive) return;
+      setLocation(next);
+      setGeoStatus("ready");
+      setGeoMessage(
+        `تحديث تلقائي يعمل · الدقة ≈ ${Math.round(next.accuracy || 0)}م`
+      );
+    };
+
+    const applyError = (message) => {
+      if (!alive) return;
+      setGeoStatus((current) => (current === "ready" ? current : "denied"));
+      if (!locationRef.current) {
+        setGeoMessage(message);
       }
-    }, 10000);
+    };
 
     if (insecure) {
-      setGeoMessage("محاولة تفعيل GPS على HTTP للتتبع والتسليم...");
+      setGeoMessage(
+        "الموقع على HTTP — GPS غالبًا ممنوع. افتح عبر HTTPS لتفعيل التحديث التلقائي"
+      );
     }
 
+    const poll = async () => {
+      try {
+        const next = await readPosition({ timeout: 10000 });
+        applySuccess(next);
+      } catch (error) {
+        applyError(error.message || "تعذر تحديث الموقع");
+      }
+    };
+
+    poll();
+    const timer = setInterval(poll, intervalMs);
+
     const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        settled = true;
-        setLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        });
-        setGeoStatus("ready");
-        setGeoMessage(
-          `التتبع يعمل · الدقة ≈ ${Math.round(position.coords.accuracy || 0)}م`
-        );
-      },
-      () => {
-        settled = true;
-        setGeoStatus("denied");
-        setGeoMessage(
-          insecure
-            ? "تعذر GPS على HTTP — التسليم يحتاج موقعًا حقيقيًا عند الزبون"
-            : "لم يتم السماح بالموقع — فعّله لإتمام التسليم وتتبعك"
-        );
-      },
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }
+      (position) => applySuccess(positionFromEvent(position)),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
     );
 
     return () => {
-      clearTimeout(failTimer);
+      alive = false;
+      clearInterval(timer);
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [insecure]);
+  }, [auto, intervalMs, insecure]);
 
   const refreshLocation = async () => {
-    const next = await readPosition({ allowInsecure: true, timeout: 15000 });
+    const next = await readPosition({ timeout: 15000 });
     setLocation(next);
     setGeoStatus("ready");
-    setGeoMessage(`التتبع يعمل · الدقة ≈ ${Math.round(next.accuracy || 0)}م`);
+    setGeoMessage(
+      `تحديث تلقائي يعمل · الدقة ≈ ${Math.round(next.accuracy || 0)}م`
+    );
     return next;
   };
 
