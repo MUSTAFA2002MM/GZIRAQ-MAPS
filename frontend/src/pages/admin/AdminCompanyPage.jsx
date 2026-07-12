@@ -9,6 +9,7 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
+import PasswordInput from "../../components/common/PasswordInput";
 import { opsApi } from "../../services/opsStore";
 
 const companyIcon = L.divIcon({
@@ -48,6 +49,13 @@ export default function AdminCompanyPage() {
   });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
 
   const load = async () => {
     const current = await opsApi.getCompany();
@@ -121,6 +129,31 @@ export default function AdminCompanyPage() {
 
     setCompany(result.data.company);
     setMessage(result.data.message || "تم تثبيت موقع الشركة");
+  };
+
+  const onPasswordChange = (event) => {
+    const { name, value } = event.target;
+    setPasswordForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const onPasswordSave = async (event) => {
+    event.preventDefault();
+    setPasswordSaving(true);
+    setPasswordMessage("");
+    const result = await opsApi.changeAdminPassword(passwordForm);
+    setPasswordSaving(false);
+
+    if (!result.ok) {
+      setPasswordMessage(result.data.message);
+      return;
+    }
+
+    setPasswordForm({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+    setPasswordMessage(result.data.message || "تم تغيير كلمة المرور");
   };
 
   return (
@@ -233,6 +266,65 @@ export default function AdminCompanyPage() {
           {company.radiusMeters}م
         </p>
       )}
+
+      <section className="attendance-box" style={{ marginTop: 24 }}>
+        <header className="panel-header" style={{ marginBottom: 12 }}>
+          <div>
+            <h2 style={{ fontSize: 20 }}>تغيير كلمة سر المدير</h2>
+            <p>لن تظهر كلمة المرور في الشاشة أو في بيانات السيرفر العامة</p>
+          </div>
+        </header>
+
+        {passwordMessage && (
+          <div
+            className={`message ${
+              passwordMessage.includes("تم") ? "success" : "error"
+            }`}
+          >
+            {passwordMessage}
+          </div>
+        )}
+
+        <form className="panel-form" onSubmit={onPasswordSave}>
+          <div className="form-grid">
+            <PasswordInput
+              name="currentPassword"
+              label="كلمة المرور الحالية"
+              value={passwordForm.currentPassword}
+              onChange={onPasswordChange}
+              required
+              autoComplete="current-password"
+            />
+            <PasswordInput
+              name="newPassword"
+              label="كلمة المرور الجديدة"
+              value={passwordForm.newPassword}
+              onChange={onPasswordChange}
+              minLength={6}
+              required
+              autoComplete="new-password"
+            />
+            <PasswordInput
+              name="confirmPassword"
+              label="تأكيد كلمة المرور الجديدة"
+              value={passwordForm.confirmPassword}
+              onChange={onPasswordChange}
+              minLength={6}
+              required
+              autoComplete="new-password"
+            />
+          </div>
+          <div className="form-buttons">
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={passwordSaving}
+            >
+              {passwordSaving ? "جارٍ الحفظ..." : "حفظ كلمة المرور الجديدة"}
+            </button>
+          </div>
+        </form>
+      </section>
     </section>
   );
 }

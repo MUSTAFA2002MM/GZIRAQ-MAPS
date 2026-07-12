@@ -55,7 +55,7 @@ function normalizeCompany(company) {
 }
 
 function normalizeStore(parsed) {
-  return {
+  const next = {
     ...createDefaultOps(),
     ...parsed,
     company: normalizeCompany(parsed?.company),
@@ -69,6 +69,10 @@ function normalizeStore(parsed) {
       ...(parsed?.nextIds || {}),
     },
   };
+
+  // Never keep admin password in browser storage.
+  delete next.adminPassword;
+  return next;
 }
 
 function readLocalOps() {
@@ -222,24 +226,65 @@ export const opsApi = {
   },
 
   async verifyAdminPassword(password) {
-    const store = await syncOpsFromServer();
-    if (
-      String(password) !== store.adminPassword &&
-      String(password) !== "Admin@123456"
-    ) {
-      return fail("كلمة مرور المدير غير صحيحة", 401);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(`${API_URL}/api/ops/admin-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: String(password || "") }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return fail(data.message || "كلمة مرور المدير غير صحيحة", response.status);
+      }
+
+      return ok({
+        token: data.token,
+        user: data.user,
+      });
+    } catch {
+      return fail("تعذر الاتصال بالسيرفر لتسجيل الدخول", 503);
+    }
+  },
+
+  async changeAdminPassword({ currentPassword, newPassword, confirmPassword }) {
+    if (String(newPassword || "") !== String(confirmPassword || "")) {
+      return fail("تأكيد كلمة المرور غير مطابق");
     }
 
-    return ok({
-      token: `local-admin-${Date.now()}`,
-      user: {
-        id: 1,
-        name: "المدير",
-        email: "admin@gziraq.com",
-        role: "admin",
-        is_active: true,
-      },
-    });
+    if (String(newPassword || "").length < 6) {
+      return fail("كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل");
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(`${API_URL}/api/ops/admin-password`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: String(currentPassword || ""),
+          newPassword: String(newPassword || ""),
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return fail(data.message || "تعذر تغيير كلمة المرور", response.status);
+      }
+
+      return ok({ message: data.message || "تم تغيير كلمة مرور المدير" });
+    } catch {
+      return fail("تعذر الاتصال بالسيرفر", 503);
+    }
   },
 
   async listAgents() {

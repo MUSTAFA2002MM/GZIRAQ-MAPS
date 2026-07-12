@@ -127,7 +127,8 @@ export default function LoginPage() {
               type="password"
               value={adminPassword}
               onChange={(event) => setAdminPassword(event.target.value)}
-              placeholder="Admin@123456"
+              placeholder="أدخل كلمة المرور"
+              autoComplete="current-password"
               required
             />
           </label>

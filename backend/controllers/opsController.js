@@ -1,9 +1,15 @@
 const { readStore, writeStore, createDefaultOps } = require("../services/opsService");
 
+function publicStore(store) {
+  const safe = { ...store };
+  delete safe.adminPassword;
+  return safe;
+}
+
 function getOps(req, res) {
   return res.json({
     success: true,
-    store: readStore(),
+    store: publicStore(readStore()),
   });
 }
 
@@ -17,10 +23,12 @@ function putOps(req, res) {
     });
   }
 
+  const current = readStore();
   const defaults = createDefaultOps();
   const store = {
     ...defaults,
     ...incoming,
+    adminPassword: current.adminPassword || defaults.adminPassword,
     company: {
       ...defaults.company,
       ...(incoming.company || {}),
@@ -40,11 +48,66 @@ function putOps(req, res) {
 
   return res.json({
     success: true,
-    store: readStore(),
+    store: publicStore(readStore()),
+  });
+}
+
+function adminLogin(req, res) {
+  const password = String(req.body?.password || "");
+  const store = readStore();
+
+  if (!password || password !== store.adminPassword) {
+    return res.status(401).json({
+      success: false,
+      message: "كلمة مرور المدير غير صحيحة",
+    });
+  }
+
+  return res.json({
+    success: true,
+    token: `ops-admin-${Date.now()}`,
+    user: {
+      id: 1,
+      name: "المدير",
+      email: "admin@gziraq.com",
+      role: "admin",
+      is_active: true,
+    },
+  });
+}
+
+function changeAdminPassword(req, res) {
+  const currentPassword = String(req.body?.currentPassword || "");
+  const newPassword = String(req.body?.newPassword || "");
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: "كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل",
+    });
+  }
+
+  const store = readStore();
+
+  if (!currentPassword || currentPassword !== store.adminPassword) {
+    return res.status(401).json({
+      success: false,
+      message: "كلمة المرور الحالية غير صحيحة",
+    });
+  }
+
+  store.adminPassword = newPassword;
+  writeStore(store);
+
+  return res.json({
+    success: true,
+    message: "تم تغيير كلمة مرور المدير",
   });
 }
 
 module.exports = {
   getOps,
   putOps,
+  adminLogin,
+  changeAdminPassword,
 };
