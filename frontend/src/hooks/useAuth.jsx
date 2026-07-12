@@ -31,13 +31,13 @@ export function AuthProvider({ children }) {
   };
 
   const loginAdmin = async (password) => {
-    const result = opsApi.verifyAdminPassword(password);
+    const result = await opsApi.verifyAdminPassword(password);
     if (!result.ok) return result;
     return applySession(result.data.token, result.data.user);
   };
 
   const loginByPin = async ({ role, id, pin }) => {
-    const result = opsApi.loginByPin({ role, id, pin });
+    const result = await opsApi.loginByPin({ role, id, pin });
     if (!result.ok) return result;
     return applySession(result.data.token, result.data.user);
   };
