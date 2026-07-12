@@ -7,8 +7,8 @@ export default function AdminAgentsPage() {
   const [pin, setPin] = useState("");
   const [message, setMessage] = useState("");
 
-  const load = () => {
-    const result = opsApi.listAgents();
+  const load = async () => {
+    const result = await opsApi.listAgents();
     setAgents(result.data.agents || []);
   };
 
@@ -16,9 +16,9 @@ export default function AdminAgentsPage() {
     load();
   }, []);
 
-  const onSubmit = (event) => {
+  const onSubmit = async (event) => {
     event.preventDefault();
-    const result = opsApi.createAgent({ name, pin });
+    const result = await opsApi.createAgent({ name, pin });
 
     if (!result.ok) {
       setMessage(result.data.message);
@@ -27,14 +27,14 @@ export default function AdminAgentsPage() {
 
     setName("");
     setPin("");
-    setMessage("تمت إضافة المندوب");
-    load();
+    setMessage("تمت إضافة المندوب — يظهر الآن لكل الأجهزة");
+    await load();
   };
 
-  const remove = (id) => {
+  const remove = async (id) => {
     if (!window.confirm("حذف المندوب؟")) return;
-    opsApi.deleteAgent(id);
-    load();
+    await opsApi.deleteAgent(id);
+    await load();
   };
 
   return (
@@ -42,7 +42,7 @@ export default function AdminAgentsPage() {
       <header className="panel-header">
         <div>
           <h2>إدارة المندوبين</h2>
-          <p>أضف مندوبًا مع PIN من 4 أرقام لتسجيل الدخول</p>
+          <p>أضف مندوبًا مع PIN من 4 أرقام لتسجيل الدخول من أي جهاز</p>
         </div>
       </header>
 

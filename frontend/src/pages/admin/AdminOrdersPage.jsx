@@ -15,10 +15,15 @@ export default function AdminOrdersPage() {
   });
   const [message, setMessage] = useState("");
 
-  const load = () => {
-    setAgents(opsApi.listAgents().data.agents || []);
-    setCustomers(opsApi.listCustomers().data.customers || []);
-    setOrders(opsApi.listOrders({ day }).data.orders || []);
+  const load = async () => {
+    const [agentsResult, customersResult, ordersResult] = await Promise.all([
+      opsApi.listAgents(),
+      opsApi.listCustomers(),
+      opsApi.listOrders({ day }),
+    ]);
+    setAgents(agentsResult.data.agents || []);
+    setCustomers(customersResult.data.customers || []);
+    setOrders(ordersResult.data.orders || []);
   };
 
   useEffect(() => {
@@ -30,9 +35,9 @@ export default function AdminOrdersPage() {
     setForm((current) => ({ ...current, [name]: value }));
   };
 
-  const onSubmit = (event) => {
+  const onSubmit = async (event) => {
     event.preventDefault();
-    const result = opsApi.createOrder(form);
+    const result = await opsApi.createOrder(form);
 
     if (!result.ok) {
       setMessage(result.data.message);
@@ -47,12 +52,12 @@ export default function AdminOrdersPage() {
       priority: "1",
     });
     setMessage("تم تسجيل الطلب على المندوب");
-    load();
+    await load();
   };
 
-  const collect = (orderId) => {
-    opsApi.markOrderCollected(orderId);
-    load();
+  const collect = async (orderId) => {
+    await opsApi.markOrderCollected(orderId);
+    await load();
   };
 
   return (

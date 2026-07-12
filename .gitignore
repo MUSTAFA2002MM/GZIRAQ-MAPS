@@ -1,5 +1,6 @@
 # Ignore local secrets / builds
 backend/.env
+backend/data/
 frontend/.env
 frontend/.env.production
 frontend/dist

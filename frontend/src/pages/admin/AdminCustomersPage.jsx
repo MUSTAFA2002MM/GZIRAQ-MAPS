@@ -31,8 +31,8 @@ export default function AdminCustomersPage() {
   const [picked, setPicked] = useState(null);
   const [message, setMessage] = useState("");
 
-  const load = () => {
-    const result = opsApi.listCustomers(search);
+  const load = async () => {
+    const result = await opsApi.listCustomers(search);
     setCustomers(result.data.customers || []);
   };
 
@@ -54,9 +54,9 @@ export default function AdminCustomersPage() {
     }));
   };
 
-  const onSubmit = (event) => {
+  const onSubmit = async (event) => {
     event.preventDefault();
-    const result = opsApi.createCustomer(form);
+    const result = await opsApi.createCustomer(form);
 
     if (!result.ok) {
       setMessage(result.data.message);
@@ -66,13 +66,13 @@ export default function AdminCustomersPage() {
     setForm({ name: "", mapsUrl: "", latitude: "", longitude: "" });
     setPicked(null);
     setMessage("تمت إضافة الزبون");
-    load();
+    await load();
   };
 
-  const remove = (id) => {
+  const remove = async (id) => {
     if (!window.confirm("حذف الزبون؟")) return;
-    opsApi.deleteCustomer(id);
-    load();
+    await opsApi.deleteCustomer(id);
+    await load();
   };
 
   return (

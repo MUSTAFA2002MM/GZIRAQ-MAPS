@@ -7,8 +7,8 @@ export default function AdminEmployeesPage() {
   const [pin, setPin] = useState("");
   const [message, setMessage] = useState("");
 
-  const load = () => {
-    const result = opsApi.listEmployees();
+  const load = async () => {
+    const result = await opsApi.listEmployees();
     setEmployees(result.data.employees || []);
   };
 
@@ -16,9 +16,9 @@ export default function AdminEmployeesPage() {
     load();
   }, []);
 
-  const onSubmit = (event) => {
+  const onSubmit = async (event) => {
     event.preventDefault();
-    const result = opsApi.createEmployee({ name, pin });
+    const result = await opsApi.createEmployee({ name, pin });
 
     if (!result.ok) {
       setMessage(result.data.message);
@@ -27,14 +27,14 @@ export default function AdminEmployeesPage() {
 
     setName("");
     setPin("");
-    setMessage("تمت إضافة الموظف");
-    load();
+    setMessage("تمت إضافة الموظف — يظهر الآن لكل الأجهزة");
+    await load();
   };
 
-  const remove = (id) => {
+  const remove = async (id) => {
     if (!window.confirm("حذف الموظف؟")) return;
-    opsApi.deleteEmployee(id);
-    load();
+    await opsApi.deleteEmployee(id);
+    await load();
   };
 
   return (
@@ -42,7 +42,7 @@ export default function AdminEmployeesPage() {
       <header className="panel-header">
         <div>
           <h2>إدارة الموظفين</h2>
-          <p>أضف موظفًا مع PIN من 4 أرقام لتسجيل الحضور</p>
+          <p>أضف موظفًا مع PIN من 4 أرقام لتسجيل الحضور من أي جهاز</p>
         </div>
       </header>
 

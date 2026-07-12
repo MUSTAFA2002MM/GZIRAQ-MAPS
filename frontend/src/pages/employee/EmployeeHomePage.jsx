@@ -8,8 +8,8 @@ export default function EmployeeHomePage() {
   const [message, setMessage] = useState("");
   const [location, setLocation] = useState(null);
 
-  const load = () => {
-    const result = opsApi.getAttendance({
+  const load = async () => {
+    const result = await opsApi.getAttendance({
       day: "today",
       personType: "employee",
     });
@@ -41,13 +41,13 @@ export default function EmployeeHomePage() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [user?.id]);
 
-  const clock = (action) => {
+  const clock = async (action) => {
     if (!location) {
       setMessage("انتظر تحديد الموقع");
       return;
     }
 
-    const result = opsApi.clock({
+    const result = await opsApi.clock({
       personType: "employee",
       personId: user.id,
       personName: user.name,
@@ -56,7 +56,7 @@ export default function EmployeeHomePage() {
     });
 
     setMessage(result.data.message || (result.ok ? "تم" : "فشل"));
-    load();
+    await load();
   };
 
   const company = opsApi.getCompany();

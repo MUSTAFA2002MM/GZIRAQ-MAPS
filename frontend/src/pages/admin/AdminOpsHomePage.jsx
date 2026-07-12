@@ -30,9 +30,11 @@ export default function AdminOpsHomePage() {
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState(null);
 
-  const load = () => {
-    const ordersResult = opsApi.listOrders({ day });
-    const statsResult = opsApi.getStats();
+  const load = async () => {
+    const [ordersResult, statsResult] = await Promise.all([
+      opsApi.listOrders({ day }),
+      opsApi.getStats(),
+    ]);
     setOrders(ordersResult.data.orders || []);
     setStats(statsResult.data.stats || null);
   };

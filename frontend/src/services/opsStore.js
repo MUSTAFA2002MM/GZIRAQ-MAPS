@@ -1,5 +1,10 @@
 const OPS_KEY = "gziraq_ops_store_v1";
 
+const API_URL =
+  import.meta.env.VITE_API_URL !== undefined
+    ? import.meta.env.VITE_API_URL
+    : "https://elegant-commitment-production-336a.up.railway.app";
+
 const COMPANY = {
   lat: 33.3152,
   lng: 44.3661,
@@ -29,37 +34,105 @@ function createDefaultOps() {
   };
 }
 
-function readOps() {
+function normalizeStore(parsed) {
+  return {
+    ...createDefaultOps(),
+    ...parsed,
+    agents: parsed?.agents || [],
+    employees: parsed?.employees || [],
+    customers: parsed?.customers || [],
+    orders: parsed?.orders || [],
+    attendance: parsed?.attendance || [],
+    nextIds: {
+      ...createDefaultOps().nextIds,
+      ...(parsed?.nextIds || {}),
+    },
+  };
+}
+
+function readLocalOps() {
   try {
     const raw = localStorage.getItem(OPS_KEY);
     if (!raw) {
       const initial = createDefaultOps();
-      writeOps(initial);
+      localStorage.setItem(OPS_KEY, JSON.stringify(initial));
       return initial;
     }
-    const parsed = JSON.parse(raw);
-    return {
-      ...createDefaultOps(),
-      ...parsed,
-      agents: parsed.agents || [],
-      employees: parsed.employees || [],
-      customers: parsed.customers || [],
-      orders: parsed.orders || [],
-      attendance: parsed.attendance || [],
-      nextIds: {
-        ...createDefaultOps().nextIds,
-        ...(parsed.nextIds || {}),
-      },
-    };
+    return normalizeStore(JSON.parse(raw));
   } catch {
     const initial = createDefaultOps();
-    writeOps(initial);
+    localStorage.setItem(OPS_KEY, JSON.stringify(initial));
     return initial;
   }
 }
 
-function writeOps(store) {
+function writeLocalOps(store) {
   localStorage.setItem(OPS_KEY, JSON.stringify(store));
+}
+
+function storeHasData(store) {
+  return (
+    store.agents.length > 0 ||
+    store.employees.length > 0 ||
+    store.customers.length > 0 ||
+    store.orders.length > 0 ||
+    store.attendance.length > 0
+  );
+}
+
+async function pullRemoteOps() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch(`${API_URL}/api/ops`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.store ? normalizeStore(data.store) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function pushRemoteOps(store) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    await fetch(`${API_URL}/api/ops`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ store }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+  } catch {
+    // Keep local copy if server is unreachable.
+  }
+}
+
+async function syncOpsFromServer() {
+  const remote = await pullRemoteOps();
+  const local = readLocalOps();
+
+  if (remote) {
+    if (!storeHasData(remote) && storeHasData(local)) {
+      await pushRemoteOps(local);
+      return local;
+    }
+    writeLocalOps(remote);
+    return remote;
+  }
+
+  return local;
+}
+
+async function saveOps(store) {
+  writeLocalOps(store);
+  await pushRemoteOps(store);
+  return store;
 }
 
 function ok(data) {
@@ -95,9 +168,16 @@ export const opsApi = {
     return COMPANY;
   },
 
-  verifyAdminPassword(password) {
-    const store = readOps();
-    if (String(password) !== store.adminPassword && String(password) !== "Admin@123456") {
+  async refresh() {
+    return syncOpsFromServer();
+  },
+
+  async verifyAdminPassword(password) {
+    const store = await syncOpsFromServer();
+    if (
+      String(password) !== store.adminPassword &&
+      String(password) !== "Admin@123456"
+    ) {
       return fail("كلمة مرور المدير غير صحيحة", 401);
     }
 
@@ -113,12 +193,13 @@ export const opsApi = {
     });
   },
 
-  listAgents() {
-    return ok({ agents: readOps().agents });
+  async listAgents() {
+    const store = await syncOpsFromServer();
+    return ok({ agents: store.agents });
   },
 
-  createAgent({ name, pin }) {
-    const store = readOps();
+  async createAgent({ name, pin }) {
+    const store = await syncOpsFromServer();
     const cleanName = String(name || "").trim();
     const cleanPin = String(pin || "").trim();
 
@@ -140,23 +221,24 @@ export const opsApi = {
     };
 
     store.agents.unshift(agent);
-    writeOps(store);
+    await saveOps(store);
     return { ok: true, status: 201, data: { success: true, agent } };
   },
 
-  deleteAgent(id) {
-    const store = readOps();
+  async deleteAgent(id) {
+    const store = await syncOpsFromServer();
     store.agents = store.agents.filter((item) => Number(item.id) !== Number(id));
-    writeOps(store);
+    await saveOps(store);
     return ok({ message: "تم حذف المندوب" });
   },
 
-  listEmployees() {
-    return ok({ employees: readOps().employees });
+  async listEmployees() {
+    const store = await syncOpsFromServer();
+    return ok({ employees: store.employees });
   },
 
-  createEmployee({ name, pin }) {
-    const store = readOps();
+  async createEmployee({ name, pin }) {
+    const store = await syncOpsFromServer();
     const cleanName = String(name || "").trim();
     const cleanPin = String(pin || "").trim();
 
@@ -178,21 +260,21 @@ export const opsApi = {
     };
 
     store.employees.unshift(employee);
-    writeOps(store);
+    await saveOps(store);
     return { ok: true, status: 201, data: { success: true, employee } };
   },
 
-  deleteEmployee(id) {
-    const store = readOps();
+  async deleteEmployee(id) {
+    const store = await syncOpsFromServer();
     store.employees = store.employees.filter(
       (item) => Number(item.id) !== Number(id)
     );
-    writeOps(store);
+    await saveOps(store);
     return ok({ message: "تم حذف الموظف" });
   },
 
-  loginByPin({ role, id, pin }) {
-    const store = readOps();
+  async loginByPin({ role, id, pin }) {
+    const store = await syncOpsFromServer();
     const list = role === "delivery" ? store.agents : store.employees;
     const person = list.find((item) => Number(item.id) === Number(id));
 
@@ -216,8 +298,8 @@ export const opsApi = {
     });
   },
 
-  listCustomers(search = "") {
-    const store = readOps();
+  async listCustomers(search = "") {
+    const store = await syncOpsFromServer();
     const query = String(search || "").trim().toLowerCase();
     let customers = store.customers;
 
@@ -230,8 +312,8 @@ export const opsApi = {
     return ok({ customers });
   },
 
-  createCustomer({ name, mapsUrl, latitude, longitude }) {
-    const store = readOps();
+  async createCustomer({ name, mapsUrl, latitude, longitude }) {
+    const store = await syncOpsFromServer();
     const cleanName = String(name || "").trim();
     const lat = Number(latitude);
     const lng = Number(longitude);
@@ -250,21 +332,21 @@ export const opsApi = {
     };
 
     store.customers.unshift(customer);
-    writeOps(store);
+    await saveOps(store);
     return { ok: true, status: 201, data: { success: true, customer } };
   },
 
-  deleteCustomer(id) {
-    const store = readOps();
+  async deleteCustomer(id) {
+    const store = await syncOpsFromServer();
     store.customers = store.customers.filter(
       (item) => Number(item.id) !== Number(id)
     );
-    writeOps(store);
+    await saveOps(store);
     return ok({ message: "تم حذف الزبون" });
   },
 
-  listOrders({ day = "today", agentId } = {}) {
-    const store = readOps();
+  async listOrders({ day = "today", agentId } = {}) {
+    const store = await syncOpsFromServer();
     const key =
       day === "yesterday"
         ? todayKey(new Date(Date.now() - 86400000))
@@ -281,8 +363,8 @@ export const opsApi = {
     return ok({ orders, day: key });
   },
 
-  createOrder({ agentId, customerId, customerName, amount, priority }) {
-    const store = readOps();
+  async createOrder({ agentId, customerId, customerName, amount, priority }) {
+    const store = await syncOpsFromServer();
     const agent = store.agents.find(
       (item) => Number(item.id) === Number(agentId)
     );
@@ -317,12 +399,12 @@ export const opsApi = {
     };
 
     store.orders.unshift(order);
-    writeOps(store);
+    await saveOps(store);
     return { ok: true, status: 201, data: { success: true, order } };
   },
 
-  updateOrderStatus(orderId, { status, amount, agentLocation }) {
-    const store = readOps();
+  async updateOrderStatus(orderId, { status, amount, agentLocation }) {
+    const store = await syncOpsFromServer();
     const order = store.orders.find(
       (item) => Number(item.id) === Number(orderId)
     );
@@ -354,12 +436,12 @@ export const opsApi = {
 
     order.status = status;
     order.updated_at = new Date().toISOString();
-    writeOps(store);
+    await saveOps(store);
     return ok({ order, message: "تم تحديث الطلب" });
   },
 
-  markOrderCollected(orderId) {
-    const store = readOps();
+  async markOrderCollected(orderId) {
+    const store = await syncOpsFromServer();
     const order = store.orders.find(
       (item) => Number(item.id) === Number(orderId)
     );
@@ -370,12 +452,12 @@ export const opsApi = {
 
     order.collected = true;
     order.updated_at = new Date().toISOString();
-    writeOps(store);
+    await saveOps(store);
     return ok({ order });
   },
 
-  clock({ personType, personId, personName, action, location }) {
-    const store = readOps();
+  async clock({ personType, personId, personName, action, location }) {
+    const store = await syncOpsFromServer();
     const company = COMPANY;
 
     if (!location) {
@@ -429,12 +511,12 @@ export const opsApi = {
       record.check_out = now;
     }
 
-    writeOps(store);
+    await saveOps(store);
     return ok({ attendance: record, message: "تم تسجيل الحضور" });
   },
 
-  getAttendance({ day = "today", personType } = {}) {
-    const store = readOps();
+  async getAttendance({ day = "today", personType } = {}) {
+    const store = await syncOpsFromServer();
     const key =
       day === "yesterday"
         ? todayKey(new Date(Date.now() - 86400000))
@@ -449,8 +531,8 @@ export const opsApi = {
     return ok({ attendance: rows, day: key });
   },
 
-  getStats() {
-    const store = readOps();
+  async getStats() {
+    const store = await syncOpsFromServer();
     const day = todayKey();
     const todayOrders = store.orders.filter((order) => order.day === day);
 

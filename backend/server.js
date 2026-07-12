@@ -9,6 +9,7 @@ const authRoutes = require("./routes/authRoutes");
 const locationRoutes = require("./routes/locationRoutes");
 const placeRoutes = require("./routes/placeRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const opsRoutes = require("./routes/opsRoutes");
 const {
   notFoundHandler,
   errorHandler,
@@ -28,6 +29,7 @@ app.use("/api", authRoutes);
 app.use("/api", locationRoutes);
 app.use("/api", placeRoutes);
 app.use("/api", adminRoutes);
+app.use("/api", opsRoutes);
 
 if (hasFrontendBuild) {
   app.use(express.static(frontendDist));

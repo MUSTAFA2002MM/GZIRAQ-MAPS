@@ -29,13 +29,16 @@ export default function DeliveryMapPage() {
   const [message, setMessage] = useState("");
   const [attendance, setAttendance] = useState(null);
 
-  const loadOrders = () => {
-    const result = opsApi.listOrders({ day, agentId: user?.id });
+  const loadOrders = async () => {
+    const result = await opsApi.listOrders({ day, agentId: user?.id });
     setOrders(result.data.orders || []);
   };
 
-  const loadAttendance = () => {
-    const result = opsApi.getAttendance({ day: "today", personType: "delivery" });
+  const loadAttendance = async () => {
+    const result = await opsApi.getAttendance({
+      day: "today",
+      personType: "delivery",
+    });
     const mine = (result.data.attendance || []).find(
       (item) => Number(item.person_id) === Number(user?.id)
     );
@@ -54,7 +57,7 @@ export default function DeliveryMapPage() {
     }
 
     const watchId = navigator.geolocation.watchPosition(
-      (position) => {
+      async (position) => {
         const next = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
@@ -62,10 +65,9 @@ export default function DeliveryMapPage() {
         setLocation(next);
         setTrack((current) => [...current.slice(-80), [next.lat, next.lng]]);
 
-        // auto mark nearby
-        const result = opsApi.listOrders({ day, agentId: user?.id });
+        const result = await opsApi.listOrders({ day, agentId: user?.id });
         const list = result.data.orders || [];
-        list.forEach((order) => {
+        for (const order of list) {
           if (
             order.status === "registered" &&
             Number.isFinite(order.latitude) &&
@@ -76,11 +78,11 @@ export default function DeliveryMapPage() {
               lng: order.longitude,
             });
             if (meters <= 150) {
-              opsApi.updateOrderStatus(order.id, { status: "nearby" });
+              await opsApi.updateOrderStatus(order.id, { status: "nearby" });
             }
           }
-        });
-        loadOrders();
+        }
+        await loadOrders();
       },
       () => setMessage("فعّل إذن الموقع للمتابعة"),
       { enableHighAccuracy: true, maximumAge: 3000 }
@@ -98,7 +100,7 @@ export default function DeliveryMapPage() {
     [orders]
   );
 
-  const updateStatus = (order, status) => {
+  const updateStatus = async (order, status) => {
     let amount = order.amount;
 
     if (status === "delivered") {
@@ -107,7 +109,7 @@ export default function DeliveryMapPage() {
       amount = Number(value);
     }
 
-    const result = opsApi.updateOrderStatus(order.id, {
+    const result = await opsApi.updateOrderStatus(order.id, {
       status,
       amount,
       agentLocation: location,
@@ -119,16 +121,16 @@ export default function DeliveryMapPage() {
     }
 
     setMessage(result.data.message || "تم التحديث");
-    loadOrders();
+    await loadOrders();
   };
 
-  const clock = (action) => {
+  const clock = async (action) => {
     if (!location) {
       setMessage("انتظر تحديد الموقع");
       return;
     }
 
-    const result = opsApi.clock({
+    const result = await opsApi.clock({
       personType: "delivery",
       personId: user.id,
       personName: user.name,
@@ -137,7 +139,7 @@ export default function DeliveryMapPage() {
     });
 
     setMessage(result.data.message || (result.ok ? "تم" : "فشل"));
-    loadAttendance();
+    await loadAttendance();
   };
 
   return (

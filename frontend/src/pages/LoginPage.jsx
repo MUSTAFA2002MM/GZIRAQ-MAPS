@@ -26,10 +26,27 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const agentsResult = opsApi.listAgents();
-    const employeesResult = opsApi.listEmployees();
-    setAgents(agentsResult.data.agents || []);
-    setEmployees(employeesResult.data.employees || []);
+    let active = true;
+
+    const loadPeople = async () => {
+      const agentsResult = await opsApi.listAgents();
+      const employeesResult = await opsApi.listEmployees();
+      if (!active) return;
+      setAgents(agentsResult.data.agents || []);
+      setEmployees(employeesResult.data.employees || []);
+    };
+
+    loadPeople();
+
+    const onFocus = () => {
+      loadPeople();
+    };
+
+    window.addEventListener("focus", onFocus);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   if (!loading && isAuthenticated) {
@@ -125,11 +142,17 @@ export default function LoginPage() {
               required
             >
               <option value="">-- اختر مندوب --</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
+              {agents.length === 0 ? (
+                <option value="" disabled>
+                  لا يوجد مندوبون بعد — أضفهم من لوحة المدير
                 </option>
-              ))}
+              ) : (
+                agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))
+              )}
             </select>
           </label>
           <label className="input-group">
@@ -159,11 +182,17 @@ export default function LoginPage() {
               required
             >
               <option value="">-- اختر موظف --</option>
-              {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.name}
+              {employees.length === 0 ? (
+                <option value="" disabled>
+                  لا يوجد موظفون بعد — أضفهم من لوحة المدير
                 </option>
-              ))}
+              ) : (
+                employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name}
+                  </option>
+                ))
+              )}
             </select>
           </label>
           <label className="input-group">
