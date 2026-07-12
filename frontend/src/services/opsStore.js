@@ -635,20 +635,40 @@ export const opsApi = {
     });
   },
 
-  async getAttendance({ day = "today", personType } = {}) {
+  async getAttendance({ day = "today", month, personType } = {}) {
     const store = await syncOpsFromServer();
-    const key =
-      day === "yesterday"
-        ? todayKey(new Date(Date.now() - 86400000))
-        : todayKey();
+    let rows = store.attendance || [];
 
-    let rows = store.attendance.filter((item) => item.day === key);
+    if (month) {
+      const monthKey = String(month).slice(0, 7);
+      rows = rows.filter((item) => String(item.day || "").startsWith(monthKey));
+    } else if (day === "all") {
+      // keep all rows
+    } else if (day === "yesterday") {
+      const key = todayKey(new Date(Date.now() - 86400000));
+      rows = rows.filter((item) => item.day === key);
+    } else if (day && day !== "today") {
+      rows = rows.filter((item) => item.day === day);
+    } else {
+      const key = todayKey();
+      rows = rows.filter((item) => item.day === key);
+    }
 
     if (personType) {
       rows = rows.filter((item) => item.person_type === personType);
     }
 
-    return ok({ attendance: rows, day: key });
+    rows = [...rows].sort((a, b) => {
+      const aTime = a.check_in ? new Date(a.check_in).getTime() : 0;
+      const bTime = b.check_in ? new Date(b.check_in).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    return ok({
+      attendance: rows,
+      day: month || day,
+      month: month || null,
+    });
   },
 
   async getStats() {
