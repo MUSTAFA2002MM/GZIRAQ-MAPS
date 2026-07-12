@@ -5,11 +5,12 @@ const API_URL =
     ? import.meta.env.VITE_API_URL
     : "https://elegant-commitment-production-336a.up.railway.app";
 
-const COMPANY = {
+const DEFAULT_COMPANY = {
   lat: 33.3152,
   lng: 44.3661,
   radiusMeters: 20,
   autoCheckoutHour: 23,
+  name: "موقع الشركة",
 };
 
 function todayKey(date = new Date()) {
@@ -19,6 +20,7 @@ function todayKey(date = new Date()) {
 function createDefaultOps() {
   return {
     adminPassword: "Admin@123456",
+    company: { ...DEFAULT_COMPANY },
     agents: [],
     employees: [],
     customers: [],
@@ -34,10 +36,29 @@ function createDefaultOps() {
   };
 }
 
+function normalizeCompany(company) {
+  const source = company || {};
+  const lat = Number(source.lat);
+  const lng = Number(source.lng);
+  const radiusMeters = Number(source.radiusMeters);
+
+  return {
+    ...DEFAULT_COMPANY,
+    ...source,
+    lat: Number.isFinite(lat) ? lat : DEFAULT_COMPANY.lat,
+    lng: Number.isFinite(lng) ? lng : DEFAULT_COMPANY.lng,
+    radiusMeters: Number.isFinite(radiusMeters) && radiusMeters > 0
+      ? radiusMeters
+      : DEFAULT_COMPANY.radiusMeters,
+    name: String(source.name || DEFAULT_COMPANY.name).trim() || DEFAULT_COMPANY.name,
+  };
+}
+
 function normalizeStore(parsed) {
   return {
     ...createDefaultOps(),
     ...parsed,
+    company: normalizeCompany(parsed?.company),
     agents: parsed?.agents || [],
     employees: parsed?.employees || [],
     customers: parsed?.customers || [],
@@ -169,8 +190,31 @@ export const ORDER_STATUS = {
 };
 
 export const opsApi = {
-  getCompany() {
-    return COMPANY;
+  async getCompany() {
+    const store = await syncOpsFromServer();
+    return store.company;
+  },
+
+  async setCompany({ lat, lng, radiusMeters, name }) {
+    const store = await syncOpsFromServer();
+    const nextLat = Number(lat);
+    const nextLng = Number(lng);
+    const nextRadius = Number(radiusMeters);
+
+    if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
+      return fail("حدد موقع الشركة على الخريطة أو عبر GPS");
+    }
+
+    store.company = normalizeCompany({
+      ...store.company,
+      lat: nextLat,
+      lng: nextLng,
+      radiusMeters: Number.isFinite(nextRadius) ? nextRadius : store.company.radiusMeters,
+      name: name !== undefined ? name : store.company.name,
+    });
+
+    await saveOps(store);
+    return ok({ company: store.company, message: "تم تثبيت موقع الشركة" });
   },
 
   async refresh() {
@@ -463,7 +507,7 @@ export const opsApi = {
 
   async clock({ personType, personId, personName, action, location }) {
     const store = await syncOpsFromServer();
-    const company = COMPANY;
+    const company = store.company;
 
     if (!location) {
       return fail("الموقع مطلوب للحضور");

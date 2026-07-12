@@ -4,6 +4,7 @@ import { AuthProvider } from "./hooks/useAuth";
 import { ThemeProvider } from "./hooks/useTheme";
 import DashboardLayout from "./layouts/DashboardLayout";
 import AdminAgentsPage from "./pages/admin/AdminAgentsPage";
+import AdminCompanyPage from "./pages/admin/AdminCompanyPage";
 import AdminCustomersPage from "./pages/admin/AdminCustomersPage";
 import AdminEmployeesPage from "./pages/admin/AdminEmployeesPage";
 import AdminOpsHomePage from "./pages/admin/AdminOpsHomePage";
@@ -43,6 +44,7 @@ export default function App() {
                 <Route path="employees" element={<AdminEmployeesPage />} />
                 <Route path="customers" element={<AdminCustomersPage />} />
                 <Route path="orders" element={<AdminOrdersPage />} />
+                <Route path="company" element={<AdminCompanyPage />} />
               </Route>
             </Route>
 

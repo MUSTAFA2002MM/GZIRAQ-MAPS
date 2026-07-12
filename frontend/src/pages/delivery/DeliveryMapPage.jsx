@@ -28,6 +28,7 @@ export default function DeliveryMapPage() {
   const [track, setTrack] = useState([]);
   const [message, setMessage] = useState("");
   const [attendance, setAttendance] = useState(null);
+  const [company, setCompany] = useState(null);
 
   const loadOrders = async () => {
     const result = await opsApi.listOrders({ day, agentId: user?.id });
@@ -35,14 +36,18 @@ export default function DeliveryMapPage() {
   };
 
   const loadAttendance = async () => {
-    const result = await opsApi.getAttendance({
-      day: "today",
-      personType: "delivery",
-    });
+    const [result, companyData] = await Promise.all([
+      opsApi.getAttendance({
+        day: "today",
+        personType: "delivery",
+      }),
+      opsApi.getCompany(),
+    ]);
     const mine = (result.data.attendance || []).find(
       (item) => Number(item.person_id) === Number(user?.id)
     );
     setAttendance(mine || null);
+    setCompany(companyData);
   };
 
   useEffect(() => {
@@ -158,7 +163,9 @@ export default function DeliveryMapPage() {
       {message && <div className="message info">{message}</div>}
 
       <div className="attendance-box">
-        <strong>الحضور (داخل الشركة 20م)</strong>
+        <strong>
+          الحضور (داخل الشركة {company?.radiusMeters ?? 20}م)
+        </strong>
         <div className="form-buttons" style={{ marginTop: 10 }}>
           <button className="primary-button" type="button" onClick={() => clock("in")}>
             تسجيل دخول

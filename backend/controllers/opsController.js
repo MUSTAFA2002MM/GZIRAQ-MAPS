@@ -17,16 +17,21 @@ function putOps(req, res) {
     });
   }
 
+  const defaults = createDefaultOps();
   const store = {
-    ...createDefaultOps(),
+    ...defaults,
     ...incoming,
+    company: {
+      ...defaults.company,
+      ...(incoming.company || {}),
+    },
     agents: Array.isArray(incoming.agents) ? incoming.agents : [],
     employees: Array.isArray(incoming.employees) ? incoming.employees : [],
     customers: Array.isArray(incoming.customers) ? incoming.customers : [],
     orders: Array.isArray(incoming.orders) ? incoming.orders : [],
     attendance: Array.isArray(incoming.attendance) ? incoming.attendance : [],
     nextIds: {
-      ...createDefaultOps().nextIds,
+      ...defaults.nextIds,
       ...(incoming.nextIds || {}),
     },
   };
@@ -35,7 +40,7 @@ function putOps(req, res) {
 
   return res.json({
     success: true,
-    store,
+    store: readStore(),
   });
 }
 

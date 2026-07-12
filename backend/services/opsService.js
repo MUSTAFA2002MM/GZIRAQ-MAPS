@@ -7,6 +7,13 @@ const DATA_FILE = path.join(DATA_DIR, "ops.json");
 function createDefaultOps() {
   return {
     adminPassword: "Admin@123456",
+    company: {
+      lat: 33.3152,
+      lng: 44.3661,
+      radiusMeters: 20,
+      autoCheckoutHour: 23,
+      name: "موقع الشركة",
+    },
     agents: [],
     employees: [],
     customers: [],
@@ -22,6 +29,26 @@ function createDefaultOps() {
   };
 }
 
+function normalizeCompany(company) {
+  const defaults = createDefaultOps().company;
+  const source = company || {};
+  const lat = Number(source.lat);
+  const lng = Number(source.lng);
+  const radiusMeters = Number(source.radiusMeters);
+
+  return {
+    ...defaults,
+    ...source,
+    lat: Number.isFinite(lat) ? lat : defaults.lat,
+    lng: Number.isFinite(lng) ? lng : defaults.lng,
+    radiusMeters:
+      Number.isFinite(radiusMeters) && radiusMeters > 0
+        ? radiusMeters
+        : defaults.radiusMeters,
+    name: String(source.name || defaults.name).trim() || defaults.name,
+  };
+}
+
 function readStore() {
   try {
     if (!fs.existsSync(DATA_FILE)) {
@@ -34,6 +61,7 @@ function readStore() {
     return {
       ...createDefaultOps(),
       ...parsed,
+      company: normalizeCompany(parsed.company),
       agents: parsed.agents || [],
       employees: parsed.employees || [],
       customers: parsed.customers || [],

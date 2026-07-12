@@ -7,16 +7,21 @@ export default function EmployeeHomePage() {
   const [attendance, setAttendance] = useState(null);
   const [message, setMessage] = useState("");
   const [location, setLocation] = useState(null);
+  const [company, setCompany] = useState(null);
 
   const load = async () => {
-    const result = await opsApi.getAttendance({
-      day: "today",
-      personType: "employee",
-    });
-    const mine = (result.data.attendance || []).find(
+    const [attendanceResult, companyData] = await Promise.all([
+      opsApi.getAttendance({
+        day: "today",
+        personType: "employee",
+      }),
+      opsApi.getCompany(),
+    ]);
+    const mine = (attendanceResult.data.attendance || []).find(
       (item) => Number(item.person_id) === Number(user?.id)
     );
     setAttendance(mine || null);
+    setCompany(companyData);
   };
 
   useEffect(() => {
@@ -59,8 +64,6 @@ export default function EmployeeHomePage() {
     await load();
   };
 
-  const company = opsApi.getCompany();
-
   return (
     <section className="panel">
       <header className="panel-header">
@@ -74,7 +77,8 @@ export default function EmployeeHomePage() {
 
       <div className="attendance-box">
         <p>
-          نطاق الشركة: {company.lat}, {company.lng} — {company.radiusMeters}m
+          نطاق الشركة: {company?.lat ?? "—"}, {company?.lng ?? "—"} —{" "}
+          {company?.radiusMeters ?? 20}m
         </p>
         <div className="form-buttons" style={{ marginTop: 12 }}>
           <button className="primary-button" type="button" onClick={() => clock("in")}>
