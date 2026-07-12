@@ -104,7 +104,6 @@ systemctl reload nginx
 
 ufw allow OpenSSH
 ufw allow 80
-ufw allow 443
 ufw --force enable
 ```
 
@@ -112,7 +111,7 @@ ufw --force enable
 
 ---
 
-## 6) ربط الدومين gziraq.com
+## 6) ربط الدومين gziraq.com (بدون SSL)
 
 في لوحة الدومين (Bluehost DNS):
 
@@ -121,14 +120,13 @@ ufw --force enable
 | A    | @    | 129.121.93.45   |
 | A    | www  | 129.121.93.45   |
 
-انتظر انتشار DNS (دقائق إلى ساعات)، ثم:
+بعد انتشار DNS افتح الموقع على:
 
-```bash
-apt install -y certbot python3-certbot-nginx
-certbot --nginx -d gziraq.com -d www.gziraq.com
-```
+- **http://gziraq.com**
+- **http://www.gziraq.com**
+- **http://129.121.93.45**
 
-بعدها الموقع يعمل على: **https://gziraq.com**
+لا تحتاج Certbot ولا شهادة SSL — الموقع يعمل على المنفذ 80 فقط.
 
 ---
 
