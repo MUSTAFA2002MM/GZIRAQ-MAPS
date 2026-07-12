@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 export function readPosition(options = {}) {
   const timeout = options.timeout ?? 12000;
+  const allowInsecure = options.allowInsecure !== false;
 
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -9,7 +10,7 @@ export function readPosition(options = {}) {
       return;
     }
 
-    if (!window.isSecureContext) {
+    if (!window.isSecureContext && !allowInsecure) {
       reject(
         new Error(
           "المتصفح يمنع GPS على HTTP. يمكنك تسجيل الحضور مباشرة بدون GPS"
@@ -27,6 +28,14 @@ export function readPosition(options = {}) {
         });
       },
       (error) => {
+        if (!window.isSecureContext) {
+          reject(
+            new Error(
+              "تعذر GPS على HTTP. للتتبع والتسليم بدقة استخدم متصفحًا يسمح بالموقع أو HTTPS"
+            )
+          );
+          return;
+        }
         if (error?.code === 1) {
           reject(new Error("يجب السماح بإذن الموقع من إعدادات المتصفح"));
         } else if (error?.code === 3) {
@@ -38,7 +47,7 @@ export function readPosition(options = {}) {
       {
         enableHighAccuracy: true,
         timeout,
-        maximumAge: 5000,
+        maximumAge: 3000,
       }
     );
   });
@@ -53,15 +62,7 @@ export function useDeviceLocation() {
   useEffect(() => {
     if (!navigator.geolocation) {
       setGeoStatus("unavailable");
-      setGeoMessage("المتصفح لا يدعم GPS — يمكنك تسجيل الحضور مباشرة");
-      return undefined;
-    }
-
-    if (insecure) {
-      setGeoStatus("insecure");
-      setGeoMessage(
-        "GPS غير متاح على HTTP في هذا المتصفح — سجّل الحضور بالزر أدناه مباشرة"
-      );
+      setGeoMessage("المتصفح لا يدعم GPS");
       return undefined;
     }
 
@@ -70,10 +71,16 @@ export function useDeviceLocation() {
       if (!settled) {
         setGeoStatus((current) => (current === "ready" ? current : "timeout"));
         setGeoMessage(
-          "تعذر تثبيت الموقع بسرعة — يمكنك المحاولة أو تسجيل الحضور مباشرة"
+          insecure
+            ? "GPS ضعيف على HTTP — اسمح بالموقع إن ظهر الطلب، أو جرّب متصفحًا آخر"
+            : "تعذر تثبيت الموقع بسرعة — اضغط إعادة محاولة GPS"
         );
       }
-    }, 8000);
+    }, 10000);
+
+    if (insecure) {
+      setGeoMessage("محاولة تفعيل GPS على HTTP للتتبع والتسليم...");
+    }
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
@@ -85,15 +92,19 @@ export function useDeviceLocation() {
         });
         setGeoStatus("ready");
         setGeoMessage(
-          `الموقع جاهز · الدقة ≈ ${Math.round(position.coords.accuracy || 0)}م`
+          `التتبع يعمل · الدقة ≈ ${Math.round(position.coords.accuracy || 0)}م`
         );
       },
       () => {
         settled = true;
         setGeoStatus("denied");
-        setGeoMessage("لم يتم السماح بالموقع — يمكنك تسجيل الحضور مباشرة");
+        setGeoMessage(
+          insecure
+            ? "تعذر GPS على HTTP — التسليم يحتاج موقعًا حقيقيًا عند الزبون"
+            : "لم يتم السماح بالموقع — فعّله لإتمام التسليم وتتبعك"
+        );
       },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }
     );
 
     return () => {
@@ -103,19 +114,11 @@ export function useDeviceLocation() {
   }, [insecure]);
 
   const refreshLocation = async () => {
-    try {
-      const next = await readPosition();
-      setLocation(next);
-      setGeoStatus("ready");
-      setGeoMessage(`الموقع جاهز · الدقة ≈ ${Math.round(next.accuracy || 0)}م`);
-      return next;
-    } catch (error) {
-      setGeoStatus((current) =>
-        current === "ready" ? current : "denied"
-      );
-      setGeoMessage(error.message || "تعذر تحديد الموقع");
-      throw error;
-    }
+    const next = await readPosition({ allowInsecure: true, timeout: 15000 });
+    setLocation(next);
+    setGeoStatus("ready");
+    setGeoMessage(`التتبع يعمل · الدقة ≈ ${Math.round(next.accuracy || 0)}م`);
+    return next;
   };
 
   return {
@@ -124,7 +127,7 @@ export function useDeviceLocation() {
     geoStatus,
     geoMessage,
     insecure,
-    canBypassGeo: insecure || geoStatus !== "ready",
+    canBypassGeo: geoStatus !== "ready",
     refreshLocation,
   };
 }

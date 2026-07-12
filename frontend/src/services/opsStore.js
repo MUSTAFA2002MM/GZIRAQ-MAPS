@@ -194,6 +194,8 @@ function distanceMeters(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+export const DELIVERY_RADIUS_METERS = 150;
+
 export const ORDER_STATUS = {
   registered: { key: "registered", label: "مسجل", color: "#2563eb" },
   nearby: { key: "nearby", label: "قريب", color: "#eab308" },
@@ -544,29 +546,52 @@ export const opsApi = {
 
     if (status === "delivered" || status === "returned") {
       if (
-        agentLocation &&
-        Number.isFinite(order.latitude) &&
-        Number.isFinite(order.longitude)
+        !Number.isFinite(Number(order.latitude)) ||
+        !Number.isFinite(Number(order.longitude))
       ) {
-        const meters = distanceMeters(
-          { lat: agentLocation.lat, lng: agentLocation.lng },
-          { lat: order.latitude, lng: order.longitude }
-        );
+        return fail("هذا الطلب بلا موقع زبون على الخريطة");
+      }
 
-        if (meters > 150) {
-          return fail("يجب الاقتراب من موقع الزبون (≤ 150 متر)");
-        }
+      const agentLat = Number(agentLocation?.lat);
+      const agentLng = Number(agentLocation?.lng);
+
+      if (!Number.isFinite(agentLat) || !Number.isFinite(agentLng)) {
+        return fail(
+          "يجب تفعيل GPS والوصول إلى موقع الزبون قبل التسليم أو الإرجاع"
+        );
+      }
+
+      const meters = distanceMeters(
+        { lat: agentLat, lng: agentLng },
+        { lat: Number(order.latitude), lng: Number(order.longitude) }
+      );
+
+      if (meters > DELIVERY_RADIUS_METERS) {
+        return fail(
+          `لا يمكن التسليم قبل الوصول لموقع الزبون. بعدك الآن ${Math.round(meters)}م (المسموح ≤ ${DELIVERY_RADIUS_METERS}م)`
+        );
       }
 
       if (status === "delivered" && amount !== undefined) {
         order.amount = Number(amount) || 0;
       }
+
+      order.completed_distance = Math.round(meters);
+      order.completed_at = new Date().toISOString();
     }
 
     order.status = status;
     order.updated_at = new Date().toISOString();
     await saveOps(store);
-    return ok({ order, message: "تم تحديث الطلب" });
+    return ok({
+      order,
+      message:
+        status === "delivered"
+          ? "تم التسليم عند موقع الزبون"
+          : status === "returned"
+            ? "تم تسجيل الراجع عند موقع الزبون"
+            : "تم تحديث الطلب",
+    });
   },
 
   async markOrderCollected(orderId) {

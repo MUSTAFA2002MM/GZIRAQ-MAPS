@@ -66,7 +66,7 @@ export default function AdminOpsHomePage() {
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 10000);
+    const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   }, [day]);
 

@@ -3,7 +3,11 @@ import { MapContainer, Marker, Popup, Polyline, TileLayer } from "react-leaflet"
 import L from "leaflet";
 import { useAuth } from "../../hooks/useAuth";
 import { useDeviceLocation } from "../../hooks/useDeviceLocation";
-import { ORDER_STATUS, opsApi } from "../../services/opsStore";
+import {
+  DELIVERY_RADIUS_METERS,
+  ORDER_STATUS,
+  opsApi,
+} from "../../services/opsStore";
 
 const meIcon = new L.Icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -27,6 +31,7 @@ export default function DeliveryMapPage() {
   const [orders, setOrders] = useState([]);
   const [track, setTrack] = useState([]);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("info");
   const [attendance, setAttendance] = useState(null);
   const [company, setCompany] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -92,8 +97,11 @@ export default function DeliveryMapPage() {
             lat: order.latitude,
             lng: order.longitude,
           });
-          if (meters <= 150) {
-            await opsApi.updateOrderStatus(order.id, { status: "nearby" });
+          if (meters <= DELIVERY_RADIUS_METERS) {
+            await opsApi.updateOrderStatus(order.id, {
+              status: "nearby",
+              agentLocation: location,
+            });
           }
         }
       }
@@ -106,16 +114,14 @@ export default function DeliveryMapPage() {
     markNearby();
 
     const timer = setInterval(() => {
-      if (location) {
-        opsApi.updateAgentLocation({
-          agentId: user.id,
-          agentName: user.name,
-          lat: location.lat,
-          lng: location.lng,
-          accuracy: location.accuracy,
-        });
-      }
-    }, 15000);
+      opsApi.updateAgentLocation({
+        agentId: user.id,
+        agentName: user.name,
+        lat: location.lat,
+        lng: location.lng,
+        accuracy: location.accuracy,
+      });
+    }, 8000);
 
     return () => {
       cancelled = true;
@@ -132,11 +138,50 @@ export default function DeliveryMapPage() {
     [orders]
   );
 
+  const ordersWithDistance = useMemo(() => {
+    return orders.map((order) => {
+      const hasCustomerPoint =
+        Number.isFinite(Number(order.latitude)) &&
+        Number.isFinite(Number(order.longitude));
+      const meters =
+        location && hasCustomerPoint
+          ? opsApi.distanceMeters(location, {
+              lat: Number(order.latitude),
+              lng: Number(order.longitude),
+            })
+          : null;
+      const canComplete =
+        meters !== null && meters <= DELIVERY_RADIUS_METERS;
+
+      return {
+        ...order,
+        distanceMeters: meters === null ? null : Math.round(meters),
+        canComplete,
+      };
+    });
+  }, [orders, location]);
+
   const updateStatus = async (order, status) => {
+    setMessage("");
     let amount = order.amount;
+    let current = location;
+
+    try {
+      current = await refreshLocation();
+    } catch (error) {
+      setMessageType("error");
+      setMessage(
+        error.message ||
+          "فعّل GPS للوصول لموقع الزبون قبل التسليم"
+      );
+      return;
+    }
 
     if (status === "delivered") {
-      const value = window.prompt("مبلغ التسليم (يمكن 0)", String(order.amount || 0));
+      const value = window.prompt(
+        "مبلغ التسليم (يمكن 0)",
+        String(order.amount || 0)
+      );
       if (value === null) return;
       amount = Number(value);
     }
@@ -144,16 +189,14 @@ export default function DeliveryMapPage() {
     const result = await opsApi.updateOrderStatus(order.id, {
       status,
       amount,
-      agentLocation: location,
+      agentLocation: current,
     });
 
-    if (!result.ok) {
-      setMessage(result.data.message);
-      return;
+    setMessageType(result.ok ? "success" : "error");
+    setMessage(result.data.message || (result.ok ? "تم" : "فشل"));
+    if (result.ok) {
+      await loadOrders();
     }
-
-    setMessage(result.data.message || "تم التحديث");
-    await loadOrders();
   };
 
   const clock = async (action) => {
@@ -185,6 +228,7 @@ export default function DeliveryMapPage() {
         bypassGeo,
       });
 
+      setMessageType(result.ok ? "success" : "error");
       setMessage(result.data.message || (result.ok ? "تم" : "فشل"));
       await loadAttendance();
     } finally {
@@ -197,7 +241,10 @@ export default function DeliveryMapPage() {
       <header className="panel-header">
         <div>
           <h2>لوحة المندوب</h2>
-          <p>مشاركة الموقع تعمل تلقائيًا · المندوب: {user?.name}</p>
+          <p>
+            التتبع المباشر يعمل تلقائيًا · التسليم فقط عند الوصول للزبون (≤{" "}
+            {DELIVERY_RADIUS_METERS}م)
+          </p>
         </div>
         <select value={day} onChange={(event) => setDay(event.target.value)}>
           <option value="today">اليوم</option>
@@ -205,12 +252,11 @@ export default function DeliveryMapPage() {
         </select>
       </header>
 
-      {message && <div className="message info">{message}</div>}
+      {message && <div className={`message ${messageType}`}>{message}</div>}
 
       <div className="attendance-box">
         <strong>
-          الحضور (نطاق الشركة {company?.radiusMeters ?? 100}م
-          {company?.requireGeofence === false ? " · بدون تحقق موقع" : ""})
+          الحضور (نطاق الشركة {company?.radiusMeters ?? 100}م)
         </strong>
         <p className="empty-hint" style={{ marginTop: 8 }}>
           {geoMessage}
@@ -232,6 +278,23 @@ export default function DeliveryMapPage() {
           >
             تسجيل خروج
           </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() =>
+              refreshLocation()
+                .then(() => {
+                  setMessageType("success");
+                  setMessage("تم تحديث موقع التتبع");
+                })
+                .catch((error) => {
+                  setMessageType("error");
+                  setMessage(error.message || "تعذر تحديث الموقع");
+                })
+            }
+          >
+            تحديث موقعي للتتبع
+          </button>
         </div>
         <p className="empty-hint">
           {attendance?.check_in
@@ -250,11 +313,11 @@ export default function DeliveryMapPage() {
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           {location && (
             <Marker position={[location.lat, location.lng]} icon={meIcon}>
-              <Popup>موقعي الحالي</Popup>
+              <Popup>موقعي الحالي (تتبع مباشر)</Popup>
             </Marker>
           )}
           {track.length > 1 && <Polyline positions={track} color="#1558e0" />}
-          {orders.map((order) => {
+          {ordersWithDistance.map((order) => {
             if (
               !Number.isFinite(Number(order.latitude)) ||
               !Number.isFinite(Number(order.longitude))
@@ -272,21 +335,31 @@ export default function DeliveryMapPage() {
                   <div dir="rtl">
                     <strong>{order.customer_name}</strong>
                     <p>{meta.label}</p>
-                    {(order.status === "nearby" || order.status === "registered") && (
+                    <p>
+                      {order.distanceMeters === null
+                        ? "فعّل GPS لمعرفة المسافة"
+                        : `المسافة: ${order.distanceMeters}م`}
+                    </p>
+                    {(order.status === "nearby" ||
+                      order.status === "registered") && (
                       <div className="popup-actions">
                         <button
                           className="popup-action"
                           type="button"
+                          disabled={!order.canComplete}
                           onClick={() => updateStatus(order, "delivered")}
                         >
-                          تم التسليم
+                          {order.canComplete
+                            ? "تم التسليم"
+                            : "اقترب أكثر للتسليم"}
                         </button>
                         <button
                           className="popup-action danger"
                           type="button"
+                          disabled={!order.canComplete}
                           onClick={() => updateStatus(order, "returned")}
                         >
-                          راجع
+                          {order.canComplete ? "راجع" : "اقترب أكثر"}
                         </button>
                       </div>
                     )}
@@ -300,24 +373,29 @@ export default function DeliveryMapPage() {
 
       <h3>طلبات اليوم ({openOrders.length} مفتوحة)</h3>
       <div className="chips-list">
-        {orders.map((order) => (
+        {ordersWithDistance.map((order) => (
           <div key={order.id} className="chip-row">
             <span>
               {order.customer_name} · {ORDER_STATUS[order.status]?.label} ·{" "}
               {order.amount}
+              {order.distanceMeters !== null
+                ? ` · ${order.distanceMeters}م`
+                : " · بانتظار GPS"}
             </span>
             {(order.status === "nearby" || order.status === "registered") && (
               <div className="table-actions">
                 <button
                   className="primary-button"
                   type="button"
+                  disabled={!order.canComplete}
                   onClick={() => updateStatus(order, "delivered")}
                 >
-                  تسليم
+                  {order.canComplete ? "تسليم" : `اقترب ≤${DELIVERY_RADIUS_METERS}م`}
                 </button>
                 <button
                   className="danger-button"
                   type="button"
+                  disabled={!order.canComplete}
                   onClick={() => updateStatus(order, "returned")}
                 >
                   راجع
