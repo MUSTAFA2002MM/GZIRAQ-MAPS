@@ -19,15 +19,19 @@ function ClickPicker({ onPick }) {
   return null;
 }
 
+const emptyForm = {
+  name: "",
+  phone: "",
+  address: "",
+  mapsUrl: "",
+  latitude: "",
+  longitude: "",
+};
+
 export default function AdminCustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({
-    name: "",
-    mapsUrl: "",
-    latitude: "",
-    longitude: "",
-  });
+  const [form, setForm] = useState(emptyForm);
   const [picked, setPicked] = useState(null);
   const [message, setMessage] = useState("");
 
@@ -52,6 +56,7 @@ export default function AdminCustomersPage() {
       latitude: position[0].toFixed(6),
       longitude: position[1].toFixed(6),
     }));
+    setMessage("تم تحديد النقطة على الخريطة");
   };
 
   const onSubmit = async (event) => {
@@ -63,7 +68,7 @@ export default function AdminCustomersPage() {
       return;
     }
 
-    setForm({ name: "", mapsUrl: "", latitude: "", longitude: "" });
+    setForm(emptyForm);
     setPicked(null);
     setMessage("تمت إضافة الزبون");
     await load();
@@ -80,11 +85,21 @@ export default function AdminCustomersPage() {
       <header className="panel-header">
         <div>
           <h2>الزبائن</h2>
-          <p>أضف الزبائن بالإحداثيات أو بالضغط على الخريطة</p>
+          <p>أدخل الرقم والموقع كتابةً، ثم حدّد النقطة على الخريطة</p>
         </div>
       </header>
 
-      {message && <div className="message success">{message}</div>}
+      {message && (
+        <div
+          className={`message ${
+            message.includes("تمت") || message.includes("تم تحديد")
+              ? "success"
+              : "error"
+          }`}
+        >
+          {message}
+        </div>
+      )}
 
       <form className="panel-form" onSubmit={onSubmit}>
         <div className="form-grid">
@@ -93,7 +108,29 @@ export default function AdminCustomersPage() {
             <input name="name" value={form.name} onChange={onChange} required />
           </label>
           <label className="input-group">
-            <span>رابط Google Maps</span>
+            <span>الرقم</span>
+            <input
+              name="phone"
+              value={form.phone}
+              onChange={onChange}
+              inputMode="tel"
+              placeholder="07xxxxxxxxx"
+              dir="ltr"
+              required
+            />
+          </label>
+          <label className="input-group" style={{ gridColumn: "1 / -1" }}>
+            <span>الموقع (صيغة كتابة)</span>
+            <input
+              name="address"
+              value={form.address}
+              onChange={onChange}
+              placeholder="مثال: بغداد - الكرادة - شارع 62 - قرب ..."
+              required
+            />
+          </label>
+          <label className="input-group">
+            <span>رابط Google Maps (اختياري)</span>
             <input
               name="mapsUrl"
               value={form.mapsUrl}
@@ -101,27 +138,14 @@ export default function AdminCustomersPage() {
               dir="ltr"
             />
           </label>
-          <label className="input-group">
-            <span>Latitude</span>
-            <input
-              name="latitude"
-              value={form.latitude}
-              onChange={onChange}
-              dir="ltr"
-              required
-            />
-          </label>
-          <label className="input-group">
-            <span>Longitude</span>
-            <input
-              name="longitude"
-              value={form.longitude}
-              onChange={onChange}
-              dir="ltr"
-              required
-            />
-          </label>
         </div>
+
+        <p className="empty-hint" style={{ marginTop: 8 }}>
+          {form.latitude && form.longitude
+            ? `تم تثبيت النقطة على الخريطة`
+            : "اضغط على الخريطة لتحديد موقع الزبون قبل الحفظ"}
+        </p>
+
         <button className="primary-button" type="submit">
           إضافة زبون
         </button>
@@ -139,7 +163,11 @@ export default function AdminCustomersPage() {
               icon={markerIcon}
             >
               <Popup>
-                <div dir="rtl">{customer.name}</div>
+                <div dir="rtl">
+                  <strong>{customer.name}</strong>
+                  <p>{customer.phone || "—"}</p>
+                  <p>{customer.address || "—"}</p>
+                </div>
               </Popup>
             </Marker>
           ))}
@@ -148,7 +176,7 @@ export default function AdminCustomersPage() {
 
       <input
         className="search-input"
-        placeholder="بحث باسم الزبون"
+        placeholder="بحث بالاسم أو الرقم أو الموقع"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         style={{ marginBottom: 12 }}
@@ -158,7 +186,9 @@ export default function AdminCustomersPage() {
         {customers.map((customer) => (
           <div key={customer.id} className="chip-row">
             <span>
-              {customer.name} · {customer.latitude}, {customer.longitude}
+              {customer.name}
+              {customer.phone ? ` · ${customer.phone}` : ""}
+              {customer.address ? ` · ${customer.address}` : ""}
             </span>
             <button
               className="danger-button"

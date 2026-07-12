@@ -104,7 +104,9 @@ export default function AdminOrdersPage() {
               <option value="">-- اختر زبون --</option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
-                  {customer.name} — ID {customer.id}
+                  {customer.name}
+                  {customer.phone ? ` · ${customer.phone}` : ""}
+                  {customer.address ? ` · ${customer.address}` : ""}
                 </option>
               ))}
             </select>

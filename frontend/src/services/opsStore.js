@@ -410,27 +410,50 @@ export const opsApi = {
     let customers = store.customers;
 
     if (query) {
-      customers = customers.filter((item) =>
-        item.name.toLowerCase().includes(query)
-      );
+      customers = customers.filter((item) => {
+        const name = String(item.name || "").toLowerCase();
+        const phone = String(item.phone || "").toLowerCase();
+        const address = String(item.address || "").toLowerCase();
+        return (
+          name.includes(query) ||
+          phone.includes(query) ||
+          address.includes(query)
+        );
+      });
     }
 
     return ok({ customers });
   },
 
-  async createCustomer({ name, mapsUrl, latitude, longitude }) {
+  async createCustomer({ name, mapsUrl, latitude, longitude, phone, address }) {
     const store = await syncOpsFromServer();
     const cleanName = String(name || "").trim();
+    const cleanPhone = String(phone || "").trim();
+    const cleanAddress = String(address || "").trim();
     const lat = Number(latitude);
     const lng = Number(longitude);
 
-    if (!cleanName || !Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return fail("أدخل اسم الزبون وإحداثيات صحيحة");
+    if (!cleanName) {
+      return fail("أدخل اسم الزبون");
+    }
+
+    if (!cleanPhone) {
+      return fail("أدخل رقم الزبون");
+    }
+
+    if (!cleanAddress) {
+      return fail("أدخل موقع الزبون بصيغة كتابة");
+    }
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return fail("حدد موقع الزبون على الخريطة");
     }
 
     const customer = {
       id: store.nextIds.customer++,
       name: cleanName,
+      phone: cleanPhone,
+      address: cleanAddress,
       mapsUrl: String(mapsUrl || "").trim(),
       latitude: lat,
       longitude: lng,
