@@ -111,22 +111,35 @@ ufw --force enable
 
 ---
 
-## 6) ربط الدومين gziraq.com (بدون SSL)
+## 6) إزالة تحذير Not secure (تفعيل HTTPS)
 
-في لوحة الدومين (Bluehost DNS):
+التحذير الأحمر يظهر لأن الموقع على `http`. لإزالته بالكامل تحتاج شهادة موثوقة:
 
-| Type | Name | Value           |
-|------|------|-----------------|
-| A    | @    | 129.121.93.45   |
-| A    | www  | 129.121.93.45   |
+### أ) في Cloudflare / DNS
+اجعل سجل الدومين يشير مباشرة للـ VPS **بدون بروكسي Cloudflare**:
 
-بعد انتشار DNS افتح الموقع على:
+| Type | Name | Value         | Proxy        |
+|------|------|---------------|--------------|
+| A    | @    | 129.121.93.45 | DNS only     |
+| A    | www  | 129.121.93.45 | DNS only     |
 
-- **http://gziraq.com**
-- **http://www.gziraq.com**
-- **http://129.121.93.45**
+(السحابة رمادية = DNS only)
 
-لا تحتاج Certbot ولا شهادة SSL — الموقع يعمل على المنفذ 80 فقط.
+### ب) على السيرفر
+```bash
+cd /var/www/GZIRAQ-MAPS
+git fetch origin
+git reset --hard origin/main
+bash deploy/fix-https.sh
+```
+
+بعد النجاح افتح:
+**https://gziraq.com**
+
+يجب أن يختفي تحذير Not secure.
+
+### ملاحظة GPS
+التتبع والتسليم يحتاجان HTTPS. بعد تفعيل الشهادة افتح الموقع من `https://` واسمح بإذن الموقع.
 
 ---
 
