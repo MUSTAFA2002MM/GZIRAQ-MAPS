@@ -9,6 +9,7 @@ const adminLinks = [
   { to: "/admin/customers", label: "الزبائن" },
   { to: "/admin/orders", label: "الطلبات" },
   { to: "/admin/company", label: "موقع الشركة" },
+  { to: "/admin/password", label: "كلمة السر" },
 ];
 
 const roleLabels = {

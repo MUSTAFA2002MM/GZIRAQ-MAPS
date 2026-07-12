@@ -9,6 +9,7 @@ import AdminCustomersPage from "./pages/admin/AdminCustomersPage";
 import AdminEmployeesPage from "./pages/admin/AdminEmployeesPage";
 import AdminOpsHomePage from "./pages/admin/AdminOpsHomePage";
 import AdminOrdersPage from "./pages/admin/AdminOrdersPage";
+import AdminPasswordPage from "./pages/admin/AdminPasswordPage";
 import DeliveryMapPage from "./pages/delivery/DeliveryMapPage";
 import EmployeeHomePage from "./pages/employee/EmployeeHomePage";
 import LoginPage from "./pages/LoginPage";
@@ -45,6 +46,7 @@ export default function App() {
                 <Route path="customers" element={<AdminCustomersPage />} />
                 <Route path="orders" element={<AdminOrdersPage />} />
                 <Route path="company" element={<AdminCompanyPage />} />
+                <Route path="password" element={<AdminPasswordPage />} />
               </Route>
             </Route>
 
