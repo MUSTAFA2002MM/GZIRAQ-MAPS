@@ -1,0 +1,128 @@
+:root {
+  --font-display: "Cairo", "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  --font-body: "IBM Plex Sans Arabic", "Cairo", "Segoe UI", Tahoma, sans-serif;
+
+  --bg: #f4f6fb;
+  --bg-elevated: #ffffff;
+  --bg-soft: #ebf0f8;
+  --text: #0a0e17;
+  --text-muted: #5b667a;
+  --border: #d7dfec;
+  --primary: #1558e0;
+  --primary-strong: #0f46b8;
+  --accent: #f5c518;
+  --accent-strong: #e2b100;
+  --danger: #dc2626;
+  --success: #15803d;
+  --shadow: 0 20px 60px rgba(10, 24, 56, 0.1);
+  --shadow-soft: 0 8px 24px rgba(10, 24, 56, 0.06);
+  --map-overlay: rgba(10, 14, 23, 0.92);
+  --sidebar: #0a0e17;
+  --sidebar-text: #edf2ff;
+  --topbar: #0a0e17;
+  --chip: #e8effc;
+  --chip-text: #1558e0;
+  --focus-ring: rgba(21, 88, 224, 0.18);
+  --auth-glow: rgba(245, 197, 24, 0.3);
+  --brand-gradient: linear-gradient(135deg, #1558e0 0%, #1d4ed8 48%, #f5c518 100%);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --transition: 180ms ease;
+}
+
+[data-theme="dark"] {
+  --bg: #070a12;
+  --bg-elevated: #101726;
+  --bg-soft: #172033;
+  --text: #f4f6fb;
+  --text-muted: #97a3b8;
+  --border: #273247;
+  --primary: #3b82f6;
+  --primary-strong: #2563eb;
+  --accent: #f5c518;
+  --accent-strong: #ffd84d;
+  --danger: #f87171;
+  --success: #4ade80;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --map-overlay: rgba(4, 7, 14, 0.94);
+  --sidebar: #05070e;
+  --sidebar-text: #edf2ff;
+  --topbar: #05070e;
+  --chip: #1c2740;
+  --chip-text: #f5c518;
+  --focus-ring: rgba(59, 130, 246, 0.28);
+  --auth-glow: rgba(245, 197, 24, 0.22);
+  --brand-gradient: linear-gradient(135deg, #2563eb 0%, #1d4ed8 45%, #f5c518 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background:
+    radial-gradient(circle at 12% -10%, rgba(21, 88, 224, 0.16), transparent 36%),
+    radial-gradient(circle at 88% 0%, rgba(245, 197, 24, 0.14), transparent 32%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-soft) 100%);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+button,
+input,
+textarea,
+select,
+a {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(245, 197, 24, 0.35);
+  color: #0a0e17;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 197, 24, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(245, 197, 24, 0);
+  }
+}

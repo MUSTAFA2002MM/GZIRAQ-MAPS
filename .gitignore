@@ -1,5 +1,10 @@
-node_modules/
-frontend/node_modules/
-backend/node_modules/
-.env
-dist/
+# Ignore local secrets / builds
+backend/.env
+frontend/.env
+frontend/.env.production
+frontend/dist
+node_modules
+backend/node_modules
+frontend/node_modules
+.DS_Store
+*.log
