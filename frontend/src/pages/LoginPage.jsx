@@ -29,11 +29,16 @@ export default function LoginPage() {
     let active = true;
 
     const loadPeople = async () => {
-      const agentsResult = await opsApi.listAgents();
-      const employeesResult = await opsApi.listEmployees();
-      if (!active) return;
-      setAgents(agentsResult.data.agents || []);
-      setEmployees(employeesResult.data.employees || []);
+      try {
+        const agentsResult = await opsApi.listAgents();
+        const employeesResult = await opsApi.listEmployees();
+        if (!active) return;
+        setAgents(agentsResult.data.agents || []);
+        setEmployees(employeesResult.data.employees || []);
+      } catch {
+        if (!active) return;
+        setMessage("تعذر تحميل قائمة المندوبين من السيرفر");
+      }
     };
 
     loadPeople();

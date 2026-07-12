@@ -86,13 +86,18 @@ async function pullRemoteOps() {
     const timeout = setTimeout(() => controller.abort(), 8000);
     const response = await fetch(`${API_URL}/api/ops`, {
       signal: controller.signal,
+      cache: "no-store",
     });
     clearTimeout(timeout);
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.warn("ops sync failed:", response.status);
+      return null;
+    }
     const data = await response.json();
     return data?.store ? normalizeStore(data.store) : null;
-  } catch {
+  } catch (error) {
+    console.warn("ops sync error:", error);
     return null;
   }
 }
