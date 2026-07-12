@@ -63,11 +63,21 @@ export default function DeliveryMapPage() {
   }, [day, user?.id]);
 
   useEffect(() => {
-    if (!location) return undefined;
+    if (!location || !user?.id) return undefined;
 
     setTrack((current) => [...current.slice(-80), [location.lat, location.lng]]);
 
     let cancelled = false;
+
+    const syncLiveLocation = async () => {
+      await opsApi.updateAgentLocation({
+        agentId: user.id,
+        agentName: user.name,
+        lat: location.lat,
+        lng: location.lng,
+        accuracy: location.accuracy,
+      });
+    };
 
     const markNearby = async () => {
       const result = await opsApi.listOrders({ day, agentId: user?.id });
@@ -92,11 +102,26 @@ export default function DeliveryMapPage() {
       }
     };
 
+    syncLiveLocation();
     markNearby();
+
+    const timer = setInterval(() => {
+      if (location) {
+        opsApi.updateAgentLocation({
+          agentId: user.id,
+          agentName: user.name,
+          lat: location.lat,
+          lng: location.lng,
+          accuracy: location.accuracy,
+        });
+      }
+    }, 15000);
+
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
-  }, [location?.lat, location?.lng, day, user?.id]);
+  }, [location?.lat, location?.lng, day, user?.id, user?.name]);
 
   const openOrders = useMemo(
     () =>

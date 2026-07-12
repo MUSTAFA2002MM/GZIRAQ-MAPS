@@ -20,6 +20,7 @@ function createDefaultOps() {
     customers: [],
     orders: [],
     attendance: [],
+    agentLocations: [],
     nextIds: {
       agent: 1,
       employee: 1,
@@ -69,6 +70,7 @@ function readStore() {
       customers: parsed.customers || [],
       orders: parsed.orders || [],
       attendance: parsed.attendance || [],
+      agentLocations: parsed.agentLocations || [],
       nextIds: {
         ...createDefaultOps().nextIds,
         ...(parsed.nextIds || {}),

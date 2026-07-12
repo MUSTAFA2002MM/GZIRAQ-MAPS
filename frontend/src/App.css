@@ -1084,6 +1084,21 @@
   border-radius: 16px;
 }
 
+.agent-live-icon {
+  background: transparent;
+  border: 0;
+}
+
+.agent-live-mark {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #111;
+  border: 3px solid #f5c518;
+  box-shadow: 0 0 0 6px rgba(245, 197, 24, 0.25);
+}
+
 @media (max-width: 960px) {
   .portal-grid {
     grid-template-columns: 1fr;

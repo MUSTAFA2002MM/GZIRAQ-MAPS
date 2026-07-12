@@ -38,6 +38,9 @@ function putOps(req, res) {
     customers: Array.isArray(incoming.customers) ? incoming.customers : [],
     orders: Array.isArray(incoming.orders) ? incoming.orders : [],
     attendance: Array.isArray(incoming.attendance) ? incoming.attendance : [],
+    agentLocations: Array.isArray(incoming.agentLocations)
+      ? incoming.agentLocations
+      : current.agentLocations || [],
     nextIds: {
       ...defaults.nextIds,
       ...(incoming.nextIds || {}),

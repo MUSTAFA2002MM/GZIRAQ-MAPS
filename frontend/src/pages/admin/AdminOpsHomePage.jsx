@@ -14,6 +14,15 @@ function statusIcon(color) {
   });
 }
 
+function agentIcon() {
+  return L.divIcon({
+    className: "agent-live-icon",
+    html: `<span class="agent-live-mark"></span>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  });
+}
+
 function FitBounds({ points }) {
   const map = useMap();
 
@@ -25,48 +34,76 @@ function FitBounds({ points }) {
   return null;
 }
 
+function formatUpdatedAt(value) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleTimeString("ar-IQ", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
 export default function AdminOpsHomePage() {
   const [day, setDay] = useState("today");
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState(null);
+  const [agentLocations, setAgentLocations] = useState([]);
 
   const load = async () => {
-    const [ordersResult, statsResult] = await Promise.all([
+    const [ordersResult, statsResult, locationsResult] = await Promise.all([
       opsApi.listOrders({ day }),
       opsApi.getStats(),
+      opsApi.listAgentLocations({ maxAgeMinutes: 180 }),
     ]);
     setOrders(ordersResult.data.orders || []);
     setStats(statsResult.data.stats || null);
+    setAgentLocations(locationsResult.data.locations || []);
   };
 
   useEffect(() => {
     load();
+    const timer = setInterval(load, 10000);
+    return () => clearInterval(timer);
   }, [day]);
 
-  const points = useMemo(
-    () =>
-      orders
-        .filter(
-          (order) =>
-            Number.isFinite(Number(order.latitude)) &&
-            Number.isFinite(Number(order.longitude))
-        )
-        .map((order) => [Number(order.latitude), Number(order.longitude)]),
-    [orders]
-  );
+  const points = useMemo(() => {
+    const orderPoints = orders
+      .filter(
+        (order) =>
+          Number.isFinite(Number(order.latitude)) &&
+          Number.isFinite(Number(order.longitude))
+      )
+      .map((order) => [Number(order.latitude), Number(order.longitude)]);
+
+    const agentPoints = agentLocations
+      .filter(
+        (item) =>
+          Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng))
+      )
+      .map((item) => [Number(item.lat), Number(item.lng)]);
+
+    return [...orderPoints, ...agentPoints];
+  }, [orders, agentLocations]);
 
   return (
     <section className="panel">
       <header className="panel-header">
         <div>
           <h2>لوحة المدير</h2>
-          <p>خريطة الطلبات + إدارة المندوبين والزبائن والحضور</p>
+          <p>خريطة الطلبات + مواقع المندوبين المباشرة</p>
         </div>
         <div className="topbar-actions">
           <select value={day} onChange={(event) => setDay(event.target.value)}>
             <option value="today">اليوم</option>
             <option value="yesterday">أمس</option>
           </select>
+          <button className="secondary-button" type="button" onClick={load}>
+            تحديث المواقع
+          </button>
         </div>
       </header>
 
@@ -75,6 +112,10 @@ export default function AdminOpsHomePage() {
           <article className="stat-card">
             <span>المندوبون</span>
             <strong>{stats.agents}</strong>
+          </article>
+          <article className="stat-card">
+            <span>متصلون الآن</span>
+            <strong>{stats.live_agents ?? agentLocations.length}</strong>
           </article>
           <article className="stat-card">
             <span>الموظفون</span>
@@ -92,10 +133,6 @@ export default function AdminOpsHomePage() {
             <span>تم التسليم</span>
             <strong>{stats.delivered_today}</strong>
           </article>
-          <article className="stat-card">
-            <span>راجع</span>
-            <strong>{stats.returned_today}</strong>
-          </article>
         </div>
       )}
 
@@ -106,6 +143,10 @@ export default function AdminOpsHomePage() {
             {item.label}
           </span>
         ))}
+        <span className="legend-item">
+          <i style={{ background: "#111", border: "2px solid #f5c518" }} />
+          موقع المندوب المباشر
+        </span>
       </div>
 
       <div className="dashboard-map">
@@ -127,7 +168,7 @@ export default function AdminOpsHomePage() {
 
             return (
               <Marker
-                key={order.id}
+                key={`order-${order.id}`}
                 position={[Number(order.latitude), Number(order.longitude)]}
                 icon={statusIcon(meta.color)}
               >
@@ -142,7 +183,54 @@ export default function AdminOpsHomePage() {
               </Marker>
             );
           })}
+          {agentLocations.map((agent) => (
+            <Marker
+              key={`agent-${agent.agent_id}`}
+              position={[Number(agent.lat), Number(agent.lng)]}
+              icon={agentIcon()}
+            >
+              <Popup>
+                <div dir="rtl">
+                  <strong>{agent.agent_name}</strong>
+                  <p>موقع مباشر للمندوب</p>
+                  <p>آخر تحديث: {formatUpdatedAt(agent.updated_at)}</p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
         </MapContainer>
+      </div>
+
+      <h3 style={{ marginTop: 18 }}>المندوبون على الخريطة ({agentLocations.length})</h3>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>المندوب</th>
+              <th>Latitude</th>
+              <th>Longitude</th>
+              <th>آخر تحديث</th>
+            </tr>
+          </thead>
+          <tbody>
+            {agentLocations.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="empty-hint">
+                  لا يوجد مندوب متصل بالموقع حاليًا. عندما يفتح المندوب لوحته مع GPS يظهر هنا.
+                </td>
+              </tr>
+            ) : (
+              agentLocations.map((agent) => (
+                <tr key={agent.agent_id}>
+                  <td>{agent.agent_name}</td>
+                  <td dir="ltr">{Number(agent.lat).toFixed(6)}</td>
+                  <td dir="ltr">{Number(agent.lng).toFixed(6)}</td>
+                  <td dir="ltr">{formatUpdatedAt(agent.updated_at)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </section>
   );

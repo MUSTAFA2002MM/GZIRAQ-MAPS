@@ -30,6 +30,7 @@ function createDefaultOps() {
     customers: [],
     orders: [],
     attendance: [],
+    agentLocations: [],
     nextIds: {
       agent: 1,
       employee: 1,
@@ -69,6 +70,7 @@ function normalizeStore(parsed) {
     customers: parsed?.customers || [],
     orders: parsed?.orders || [],
     attendance: parsed?.attendance || [],
+    agentLocations: parsed?.agentLocations || [],
     nextIds: {
       ...createDefaultOps().nextIds,
       ...(parsed?.nextIds || {}),
@@ -106,7 +108,8 @@ function storeHasData(store) {
     store.employees.length > 0 ||
     store.customers.length > 0 ||
     store.orders.length > 0 ||
-    store.attendance.length > 0
+    store.attendance.length > 0 ||
+    (store.agentLocations || []).length > 0
   );
 }
 
@@ -711,10 +714,69 @@ export const opsApi = {
     });
   },
 
+  async updateAgentLocation({ agentId, agentName, lat, lng, accuracy }) {
+    const store = await syncOpsFromServer();
+    const nextLat = Number(lat);
+    const nextLng = Number(lng);
+
+    if (!agentId || !Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
+      return fail("موقع المندوب غير صالح");
+    }
+
+    const locations = Array.isArray(store.agentLocations)
+      ? [...store.agentLocations]
+      : [];
+    const index = locations.findIndex(
+      (item) => Number(item.agent_id) === Number(agentId)
+    );
+
+    const entry = {
+      agent_id: Number(agentId),
+      agent_name: agentName || "مندوب",
+      lat: nextLat,
+      lng: nextLng,
+      accuracy: Number.isFinite(Number(accuracy)) ? Number(accuracy) : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (index >= 0) {
+      locations[index] = entry;
+    } else {
+      locations.unshift(entry);
+    }
+
+    store.agentLocations = locations;
+    await saveOps(store);
+    return ok({ location: entry });
+  },
+
+  async listAgentLocations({ maxAgeMinutes = 120 } = {}) {
+    const store = await syncOpsFromServer();
+    const maxAgeMs = Math.max(1, Number(maxAgeMinutes) || 120) * 60 * 1000;
+    const now = Date.now();
+
+    const locations = (store.agentLocations || [])
+      .filter((item) => {
+        const updated = item.updated_at ? new Date(item.updated_at).getTime() : 0;
+        return Number.isFinite(updated) && now - updated <= maxAgeMs;
+      })
+      .sort((a, b) => {
+        const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        return bTime - aTime;
+      });
+
+    return ok({ locations });
+  },
+
   async getStats() {
     const store = await syncOpsFromServer();
     const day = todayKey();
     const todayOrders = store.orders.filter((order) => order.day === day);
+    const liveAgents = (store.agentLocations || []).filter((item) => {
+      const updated = item.updated_at ? new Date(item.updated_at).getTime() : 0;
+      return Number.isFinite(updated) && Date.now() - updated <= 30 * 60 * 1000;
+    }).length;
 
     return ok({
       stats: {
@@ -726,6 +788,7 @@ export const opsApi = {
           .length,
         returned_today: todayOrders.filter((o) => o.status === "returned")
           .length,
+        live_agents: liveAgents,
       },
     });
   },
