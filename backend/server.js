@@ -21,7 +21,6 @@ app.get("/api/health", (req, res) => {
     time: new Date().toISOString(),
   });
 });
-
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
