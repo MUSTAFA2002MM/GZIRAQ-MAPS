@@ -559,26 +559,46 @@ export const opsApi = {
     return ok({ order });
   },
 
-  async clock({ personType, personId, personName, action, location }) {
+  async clock({ personType, personId, personName, action, location, bypassGeo }) {
     const store = await syncOpsFromServer();
     const company = store.company;
+    const allowBypass =
+      Boolean(bypassGeo) || company.requireGeofence === false;
 
-    if (!location || !Number.isFinite(Number(location.lat)) || !Number.isFinite(Number(location.lng))) {
-      return fail("الموقع مطلوب للحضور. فعّل GPS وانتظر تحديد موقعك");
+    let coords = location;
+    const hasCoords =
+      coords &&
+      Number.isFinite(Number(coords.lat)) &&
+      Number.isFinite(Number(coords.lng));
+
+    if (!hasCoords) {
+      if (!allowBypass) {
+        return fail(
+          "الموقع مطلوب للحضور. فعّل GPS أو أوقف التحقق الجغرافي من لوحة المدير"
+        );
+      }
+
+      coords = {
+        lat: company.lat,
+        lng: company.lng,
+        accuracy: 0,
+        bypassed: true,
+      };
     }
 
     const meters = distanceMeters(
-      { lat: Number(location.lat), lng: Number(location.lng) },
+      { lat: Number(coords.lat), lng: Number(coords.lng) },
       { lat: company.lat, lng: company.lng }
     );
 
-    const accuracy = Number(location.accuracy);
+    const accuracy = Number(coords.accuracy);
     const accuracyBuffer = Number.isFinite(accuracy)
       ? Math.min(Math.max(accuracy, 0), 150)
       : 50;
     const allowedRadius = Number(company.radiusMeters) + accuracyBuffer;
+    const skippedGeo = Boolean(coords.bypassed) || company.requireGeofence === false;
 
-    if (company.requireGeofence !== false && meters > allowedRadius) {
+    if (!skippedGeo && company.requireGeofence !== false && meters > allowedRadius) {
       return fail(
         `يجب الاقتراب من موقع الشركة. المسافة الحالية ${Math.round(meters)}م (المسموح ≈ ${Math.round(allowedRadius)}م)`
       );
@@ -615,23 +635,28 @@ export const opsApi = {
       }
       record.check_in = now;
       record.check_out = null;
-      record.check_in_distance = Math.round(meters);
+      record.check_in_distance = skippedGeo ? null : Math.round(meters);
       record.check_out_distance = null;
     } else {
       if (!record.check_in) {
         return fail("سجّل الدخول أولًا");
       }
       record.check_out = now;
-      record.check_out_distance = Math.round(meters);
+      record.check_out_distance = skippedGeo ? null : Math.round(meters);
     }
 
     await saveOps(store);
+
+    const distanceNote = skippedGeo
+      ? "بدون GPS"
+      : `المسافة ${Math.round(meters)}م`;
+
     return ok({
       attendance: record,
       message:
         action === "in"
-          ? `تم تسجيل الدخول · المسافة ${Math.round(meters)}م`
-          : `تم تسجيل الخروج · المسافة ${Math.round(meters)}م`,
+          ? `تم تسجيل الدخول · ${distanceNote}`
+          : `تم تسجيل الخروج · ${distanceNote}`,
     });
   },
 

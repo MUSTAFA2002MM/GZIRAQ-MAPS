@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, Popup, Polyline, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import { useAuth } from "../../hooks/useAuth";
+import { useDeviceLocation } from "../../hooks/useDeviceLocation";
 import { ORDER_STATUS, opsApi } from "../../services/opsStore";
 
 const meIcon = new L.Icon({
@@ -24,11 +25,17 @@ export default function DeliveryMapPage() {
   const { user } = useAuth();
   const [day, setDay] = useState("today");
   const [orders, setOrders] = useState([]);
-  const [location, setLocation] = useState(null);
   const [track, setTrack] = useState([]);
   const [message, setMessage] = useState("");
   const [attendance, setAttendance] = useState(null);
   const [company, setCompany] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const {
+    location,
+    geoStatus,
+    geoMessage,
+    refreshLocation,
+  } = useDeviceLocation();
 
   const loadOrders = async () => {
     const result = await opsApi.listOrders({ day, agentId: user?.id });
@@ -56,46 +63,40 @@ export default function DeliveryMapPage() {
   }, [day, user?.id]);
 
   useEffect(() => {
-    if (!navigator.geolocation) {
-      setMessage("المتصفح لا يدعم تحديد الموقع");
-      return undefined;
-    }
+    if (!location) return undefined;
 
-    const watchId = navigator.geolocation.watchPosition(
-      async (position) => {
-        const next = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        };
-        setLocation(next);
-        setTrack((current) => [...current.slice(-80), [next.lat, next.lng]]);
+    setTrack((current) => [...current.slice(-80), [location.lat, location.lng]]);
 
-        const result = await opsApi.listOrders({ day, agentId: user?.id });
-        const list = result.data.orders || [];
-        for (const order of list) {
-          if (
-            order.status === "registered" &&
-            Number.isFinite(order.latitude) &&
-            Number.isFinite(order.longitude)
-          ) {
-            const meters = opsApi.distanceMeters(next, {
-              lat: order.latitude,
-              lng: order.longitude,
-            });
-            if (meters <= 150) {
-              await opsApi.updateOrderStatus(order.id, { status: "nearby" });
-            }
+    let cancelled = false;
+
+    const markNearby = async () => {
+      const result = await opsApi.listOrders({ day, agentId: user?.id });
+      const list = result.data.orders || [];
+      for (const order of list) {
+        if (
+          order.status === "registered" &&
+          Number.isFinite(order.latitude) &&
+          Number.isFinite(order.longitude)
+        ) {
+          const meters = opsApi.distanceMeters(location, {
+            lat: order.latitude,
+            lng: order.longitude,
+          });
+          if (meters <= 150) {
+            await opsApi.updateOrderStatus(order.id, { status: "nearby" });
           }
         }
+      }
+      if (!cancelled) {
         await loadOrders();
-      },
-      () => setMessage("فعّل إذن الموقع للمتابعة"),
-      { enableHighAccuracy: true, maximumAge: 3000 }
-    );
+      }
+    };
 
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [day, user?.id]);
+    markNearby();
+    return () => {
+      cancelled = true;
+    };
+  }, [location?.lat, location?.lng, day, user?.id]);
 
   const openOrders = useMemo(
     () =>
@@ -131,44 +132,39 @@ export default function DeliveryMapPage() {
   };
 
   const clock = async (action) => {
-    let current = location;
+    setBusy(true);
+    setMessage("");
 
-    if (!current && navigator.geolocation) {
-      try {
-        current = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            (position) =>
-              resolve({
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-                accuracy: position.coords.accuracy,
-              }),
-            reject,
-            { enableHighAccuracy: true, timeout: 15000 }
-          );
-        });
-        setLocation(current);
-      } catch {
-        setMessage("فعّل إذن الموقع وسجّل وأنت عند الشركة");
-        return;
+    try {
+      let current = location;
+      let bypassGeo = geoStatus !== "ready";
+
+      if (geoStatus === "ready") {
+        try {
+          current = await refreshLocation();
+        } catch {
+          current = location;
+        }
       }
+
+      if (!current) {
+        bypassGeo = true;
+      }
+
+      const result = await opsApi.clock({
+        personType: "delivery",
+        personId: user.id,
+        personName: user.name,
+        action,
+        location: current,
+        bypassGeo,
+      });
+
+      setMessage(result.data.message || (result.ok ? "تم" : "فشل"));
+      await loadAttendance();
+    } finally {
+      setBusy(false);
     }
-
-    if (!current) {
-      setMessage("انتظر تحديد الموقع");
-      return;
-    }
-
-    const result = await opsApi.clock({
-      personType: "delivery",
-      personId: user.id,
-      personName: user.name,
-      action,
-      location: current,
-    });
-
-    setMessage(result.data.message || (result.ok ? "تم" : "فشل"));
-    await loadAttendance();
   };
 
   return (
@@ -192,15 +188,23 @@ export default function DeliveryMapPage() {
           {company?.requireGeofence === false ? " · بدون تحقق موقع" : ""})
         </strong>
         <p className="empty-hint" style={{ marginTop: 8 }}>
-          {location
-            ? `الموقع جاهز · دقة ≈ ${Math.round(location.accuracy || 0)}م`
-            : "جارٍ تحديد موقعك..."}
+          {geoMessage}
         </p>
         <div className="form-buttons" style={{ marginTop: 10 }}>
-          <button className="primary-button" type="button" onClick={() => clock("in")}>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={busy}
+            onClick={() => clock("in")}
+          >
             تسجيل دخول
           </button>
-          <button className="secondary-button" type="button" onClick={() => clock("out")}>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={busy}
+            onClick={() => clock("out")}
+          >
             تسجيل خروج
           </button>
         </div>
