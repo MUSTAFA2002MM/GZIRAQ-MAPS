@@ -36,7 +36,11 @@ export default function DashboardLayout({ role }) {
           <div className="sidebar-brand-row">
             <div className="brand-mark">G</div>
             <div>
-              <strong>GZIRAQ MAPS</strong>
+              <strong className="sidebar-brand-title">
+                {role === "admin"
+                  ? "لوحة ادارة مصطفى كوانزو"
+                  : "GZIRAQ MAPS"}
+              </strong>
               <span>{user?.name || "مستخدم"}</span>
             </div>
           </div>

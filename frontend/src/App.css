@@ -599,6 +599,12 @@
   font-weight: 800;
 }
 
+.sidebar-brand-title {
+  display: block;
+  line-height: 1.35;
+  font-size: 15px !important;
+}
+
 .sidebar-brand span {
   color: #9db0cc;
   font-size: 13px;
