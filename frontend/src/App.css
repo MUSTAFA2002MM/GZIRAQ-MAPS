@@ -355,6 +355,25 @@
   background: #d6dde8;
 }
 
+/* Leaflet breaks under html[dir=rtl] — force LTR for map panes/tiles */
+.dashboard-map,
+.leaflet-container,
+.leaflet-pane,
+.leaflet-map-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane,
+.leaflet-control-container {
+  direction: ltr !important;
+}
+
+.leaflet-control {
+  text-align: left;
+}
+
 .map-floating-hint {
   position: absolute;
   bottom: 22px;
