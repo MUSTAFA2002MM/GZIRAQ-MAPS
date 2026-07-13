@@ -65,17 +65,6 @@ function buildWazeUrl(order) {
   return `https://www.waze.com/ul?q=${encodeURIComponent(query)}&navigate=yes`;
 }
 
-function openExternalNav(url) {
-  if (!url) return;
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.target = "_blank";
-  anchor.rel = "noopener noreferrer";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-}
-
 function OrderNavButtons({ order, fromLocation }) {
   const googleUrl = buildGoogleMapsUrl(order, fromLocation);
   const wazeUrl = buildWazeUrl(order);
