@@ -621,6 +621,10 @@ export const opsApi = {
       return fail("اختر أو اكتب اسم الزبون");
     }
 
+    const lat = Number(customer?.latitude);
+    const lng = Number(customer?.longitude);
+    const hasCoords = isValidCoords(lat, lng);
+
     const order = {
       id: store.nextIds.order++,
       agent_id: agent.id,
@@ -630,8 +634,8 @@ export const opsApi = {
       customer_phone: customer?.phone || "",
       customer_address: customer?.address || "",
       customer_maps_url: customer?.mapsUrl || "",
-      latitude: customer?.latitude ?? null,
-      longitude: customer?.longitude ?? null,
+      latitude: hasCoords ? lat : null,
+      longitude: hasCoords ? lng : null,
       amount: Number(amount) || 0,
       priority: Number(priority) || 0,
       status: "registered",
