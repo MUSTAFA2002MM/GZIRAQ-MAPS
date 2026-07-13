@@ -1,7 +1,7 @@
 # استضافة GZIRAQ MAPS على Bluehost VPS
 
 **السيرفر:** `129.121.93.45`  
-**الدومين:** `gziraq.com`  
+**الدومين:** `gziraqnews.space`  
 **النظام:** Ubuntu 24.04
 
 ---
@@ -93,7 +93,7 @@ curl http://127.0.0.1:3000/api/health
 
 ---
 
-## 5) ربط Nginx بـ gziraq.com
+## 5) ربط Nginx بـ gziraqnews.space
 
 ```bash
 cp deploy/nginx.gziraq.conf /etc/nginx/sites-available/gziraq
@@ -104,6 +104,7 @@ systemctl reload nginx
 
 ufw allow OpenSSH
 ufw allow 80
+ufw allow 443
 ufw --force enable
 ```
 
@@ -111,30 +112,38 @@ ufw --force enable
 
 ---
 
-## 6) إزالة تحذير Not secure (تفعيل HTTPS)
+## 6) ربط الدومين من Bluehost + HTTPS
 
-التحذير الأحمر يظهر لأن الموقع على `http`. لإزالته بالكامل تحتاج شهادة موثوقة:
+التحذير الأحمر يظهر لأن الموقع على `http`. تحتاج: DNS صحيح + شهادة HTTPS.
 
-### أ) في Cloudflare / DNS
-اجعل سجل الدومين يشير مباشرة للـ VPS **بدون بروكسي Cloudflare**:
+### أ) في Bluehost → Domains → gziraqnews.space → DNS
 
-| Type | Name | Value         | Proxy        |
-|------|------|---------------|--------------|
-| A    | @    | 129.121.93.45 | DNS only     |
-| A    | www  | 129.121.93.45 | DNS only     |
+عدّل سجلات A الحالية (لا تتركها على صفحة under construction):
 
-(السحابة رمادية = DNS only)
+| Type | Host Record | Points To     | TTL    |
+|------|-------------|---------------|--------|
+| A    | `@`         | **129.121.93.45** | 2 Hours |
+| A    | `www`       | **129.121.93.45** | 2 Hours |
+
+اضغط **Edit** بجانب كل سجل، غيّر `Points To` من `66.81.203.198` إلى `129.121.93.45`، ثم **Save**.
+
+DNSSEC يمكن إبقاؤه مفعّلًا.
+
+انتظر حتى يصبح `gziraqnews.space` = `129.121.93.45` (غالبًا دقائق إلى ساعات، وأحيانًا حتى 24 ساعة).
 
 ### ب) على السيرفر
+
 ```bash
+ssh root@129.121.93.45
 cd /var/www/GZIRAQ-MAPS
-git fetch origin
-git reset --hard origin/main
-bash deploy/fix-https.sh
+git pull
+cp deploy/nginx.gziraq.conf /etc/nginx/sites-available/gziraq
+nginx -t && systemctl reload nginx
+bash deploy/fix-https.sh gziraqnews.space
 ```
 
 بعد النجاح افتح:
-**https://gziraq.com**
+**https://gziraqnews.space**
 
 يجب أن يختفي تحذير Not secure.
 

@@ -2,11 +2,10 @@
 set -euo pipefail
 
 # Fixes browser "Not secure" by enabling real HTTPS with Let's Encrypt.
-# REQUIREMENT: DNS A record for gziraq.com must point to this server IP (not Cloudflare proxy).
-# Recommended: Cloudflare DNS -> A @ = SERVER_IP , Proxy status = DNS only (grey cloud)
+# REQUIREMENT: DNS A record for the domain must point to this server IP.
 
-DOMAIN="${1:-gziraq.com}"
-EMAIL="${2:-admin@gziraq.com}"
+DOMAIN="${1:-gziraqnews.space}"
+EMAIL="${2:-admin@gziraqnews.space}"
 SERVER_IP="$(curl -4 -fsS ifconfig.me || hostname -I | awk '{print $1}')"
 
 echo "==> Server public IP: $SERVER_IP"
@@ -17,15 +16,14 @@ echo "==> $DOMAIN resolves to: ${DOMAIN_IP:-unknown}"
 if [ -z "${DOMAIN_IP:-}" ] || [ "$DOMAIN_IP" != "$SERVER_IP" ]; then
   echo ""
   echo "DNS is NOT pointing to this VPS yet."
-  echo "In Cloudflare / domain DNS set:"
+  echo "In Bluehost Domain Center → DNS set:"
   echo "  Type: A"
-  echo "  Name: @"
-  echo "  Value: $SERVER_IP"
-  echo "  Proxy: DNS only (grey cloud)"
-  echo "Also add www A record to the same IP."
+  echo "  Host: @"
+  echo "  Points to: $SERVER_IP"
+  echo "  Also set www A record to the same IP."
   echo ""
-  echo "After DNS updates (5-30 minutes), run this script again:"
-  echo "  bash deploy/fix-https.sh"
+  echo "After DNS updates (often 5-60 minutes, sometimes longer), run again:"
+  echo "  bash deploy/fix-https.sh $DOMAIN"
   echo ""
   echo "Meanwhile enabling temporary HTTPS on the IP (self-signed)..."
   bash "$(dirname "$0")/enable-https.sh" "$SERVER_IP"

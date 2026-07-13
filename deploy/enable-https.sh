@@ -23,14 +23,14 @@ cat > "$SITE" <<EOF
 server {
     listen 80;
     listen [::]:80;
-    server_name gziraq.com www.gziraq.com 129.121.93.45;
+    server_name gziraqnews.space www.gziraqnews.space 129.121.93.45;
     return 301 https://\$host\$request_uri;
 }
 
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name gziraq.com www.gziraq.com 129.121.93.45;
+    server_name gziraqnews.space www.gziraqnews.space 129.121.93.45;
 
     ssl_certificate     $CRT;
     ssl_certificate_key $KEY;
