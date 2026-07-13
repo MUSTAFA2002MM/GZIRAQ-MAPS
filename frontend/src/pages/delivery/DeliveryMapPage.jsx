@@ -28,43 +28,52 @@ function statusIcon(color) {
 function buildGoogleMapsUrl(order, fromLocation) {
   const lat = Number(order.latitude);
   const lng = Number(order.longitude);
+  const hasPoint = Number.isFinite(lat) && Number.isFinite(lng);
+
+  if (hasPoint) {
+    if (
+      fromLocation &&
+      Number.isFinite(fromLocation.lat) &&
+      Number.isFinite(fromLocation.lng)
+    ) {
+      return `https://www.google.com/maps/dir/?api=1&origin=${fromLocation.lat},${fromLocation.lng}&destination=${lat},${lng}&travelmode=driving`;
+    }
+    return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+  }
 
   if (order.customer_maps_url) {
     return order.customer_maps_url;
   }
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    const query = encodeURIComponent(
-      order.customer_address || order.customer_name || ""
-    );
-    return query ? `https://www.google.com/maps/search/?api=1&query=${query}` : "";
-  }
-
-  if (
-    fromLocation &&
-    Number.isFinite(fromLocation.lat) &&
-    Number.isFinite(fromLocation.lng)
-  ) {
-    return `https://www.google.com/maps/dir/?api=1&origin=${fromLocation.lat},${fromLocation.lng}&destination=${lat},${lng}&travelmode=driving`;
-  }
-
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+  const query = encodeURIComponent(
+    order.customer_address || order.customer_name || ""
+  );
+  return query ? `https://www.google.com/maps/search/?api=1&query=${query}` : "";
 }
 
 function buildWazeUrl(order) {
   const lat = Number(order.latitude);
   const lng = Number(order.longitude);
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return "";
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    // Official Waze deep link format
+    return `https://www.waze.com/ul?ll=${lat},${lng}&navigate=yes&zoom=17`;
   }
 
-  return `https://waze.com/ul?ll=${lat}%2C${lng}&navigate=yes`;
+  const query = order.customer_address || order.customer_name || "";
+  if (!query) return "";
+  return `https://www.waze.com/ul?q=${encodeURIComponent(query)}&navigate=yes`;
 }
 
 function openExternalNav(url) {
   if (!url) return;
-  window.open(url, "_blank", "noopener,noreferrer");
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_blank";
+  anchor.rel = "noopener noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 function OrderNavButtons({ order, fromLocation }) {
@@ -77,7 +86,7 @@ function OrderNavButtons({ order, fromLocation }) {
   if (!googleUrl && !wazeUrl) {
     return (
       <p className="empty-hint" style={{ margin: 0 }}>
-        لا يوجد موقع محفوظ لهذا الزبون
+        لا يوجد موقع محفوظ لهذا الزبون — أعد حفظ الزبون مع نقطة على الخريطة
       </p>
     );
   }
@@ -85,26 +94,29 @@ function OrderNavButtons({ order, fromLocation }) {
   return (
     <div className="nav-actions">
       {googleUrl && (
-        <button
+        <a
           className="nav-button google"
-          type="button"
-          onClick={() => openExternalNav(googleUrl)}
+          href={googleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
         >
           Google Maps
-        </button>
+        </a>
       )}
       {wazeUrl && (
-        <button
+        <a
           className="nav-button waze"
-          type="button"
-          onClick={() => openExternalNav(wazeUrl)}
+          href={wazeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
         >
           Waze
-        </button>
+        </a>
       )}
-      {!hasPoint && order.customer_address && (
+      {order.customer_address && (
         <p className="empty-hint" style={{ margin: 0, width: "100%" }}>
-          الموقع كتابة: {order.customer_address}
+          الموقع: {order.customer_address}
+          {!hasPoint ? " · (بدون إحداثيات — أعد تحديد النقطة من لوحة الزبائن)" : ""}
         </p>
       )}
     </div>

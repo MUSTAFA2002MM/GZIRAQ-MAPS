@@ -566,6 +566,27 @@ export const opsApi = {
       );
     }
 
+    // Enrich older orders with customer coordinates/address if missing.
+    orders = orders.map((order) => {
+      const customer = store.customers.find(
+        (item) => Number(item.id) === Number(order.customer_id)
+      );
+      if (!customer) return order;
+
+      const lat = Number(order.latitude);
+      const lng = Number(order.longitude);
+      const hasPoint = Number.isFinite(lat) && Number.isFinite(lng);
+
+      return {
+        ...order,
+        customer_phone: order.customer_phone || customer.phone || "",
+        customer_address: order.customer_address || customer.address || "",
+        customer_maps_url: order.customer_maps_url || customer.mapsUrl || "",
+        latitude: hasPoint ? lat : customer.latitude,
+        longitude: hasPoint ? lng : customer.longitude,
+      };
+    });
+
     return ok({ orders, day: key });
   },
 

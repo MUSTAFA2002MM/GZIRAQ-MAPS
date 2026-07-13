@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import { ORDER_STATUS, opsApi } from "../../services/opsStore";
@@ -23,12 +23,46 @@ function agentIcon() {
   });
 }
 
-function FitBounds({ points }) {
+function MapReadyFix() {
   const map = useMap();
 
   useEffect(() => {
+    const refresh = () => {
+      map.invalidateSize({ animate: false });
+    };
+
+    refresh();
+    const t1 = setTimeout(refresh, 150);
+    const t2 = setTimeout(refresh, 600);
+    window.addEventListener("resize", refresh);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      window.removeEventListener("resize", refresh);
+    };
+  }, [map]);
+
+  return null;
+}
+
+function FitBounds({ points, resetKey }) {
+  const map = useMap();
+  const lastKey = useRef("");
+
+  useEffect(() => {
+    lastKey.current = "";
+  }, [resetKey]);
+
+  useEffect(() => {
     if (!points.length) return;
-    map.fitBounds(points, { padding: [40, 40], maxZoom: 14 });
+
+    const key = points.map((point) => point.join(",")).join("|");
+    if (key === lastKey.current) return;
+    lastKey.current = key;
+
+    map.invalidateSize({ animate: false });
+    map.fitBounds(points, { padding: [48, 48], maxZoom: 15 });
   }, [map, points]);
 
   return null;
@@ -52,21 +86,26 @@ export default function AdminOpsHomePage() {
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState(null);
   const [agentLocations, setAgentLocations] = useState([]);
+  const [company, setCompany] = useState(null);
+  const [mapNonce, setMapNonce] = useState(0);
 
   const load = async () => {
-    const [ordersResult, statsResult, locationsResult] = await Promise.all([
-      opsApi.listOrders({ day }),
-      opsApi.getStats(),
-      opsApi.listAgentLocations({ maxAgeMinutes: 180 }),
-    ]);
+    const [ordersResult, statsResult, locationsResult, companyData] =
+      await Promise.all([
+        opsApi.listOrders({ day }),
+        opsApi.getStats(),
+        opsApi.listAgentLocations({ maxAgeMinutes: 180 }),
+        opsApi.getCompany(),
+      ]);
     setOrders(ordersResult.data.orders || []);
     setStats(statsResult.data.stats || null);
     setAgentLocations(locationsResult.data.locations || []);
+    setCompany(companyData);
   };
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 5000);
+    const timer = setInterval(load, 8000);
     return () => clearInterval(timer);
   }, [day]);
 
@@ -89,6 +128,13 @@ export default function AdminOpsHomePage() {
     return [...orderPoints, ...agentPoints];
   }, [orders, agentLocations]);
 
+  const mapCenter = useMemo(() => {
+    if (company && Number.isFinite(company.lat) && Number.isFinite(company.lng)) {
+      return [company.lat, company.lng];
+    }
+    return defaultCenter;
+  }, [company]);
+
   return (
     <section className="panel">
       <header className="panel-header">
@@ -101,7 +147,14 @@ export default function AdminOpsHomePage() {
             <option value="today">اليوم</option>
             <option value="yesterday">أمس</option>
           </select>
-          <button className="secondary-button" type="button" onClick={load}>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              load();
+              setMapNonce((value) => value + 1);
+            }}
+          >
             تحديث المواقع
           </button>
         </div>
@@ -150,12 +203,42 @@ export default function AdminOpsHomePage() {
       </div>
 
       <div className="dashboard-map">
-        <MapContainer center={defaultCenter} zoom={12} className="map-canvas">
+        <MapContainer
+          key={`admin-map-${day}-${mapNonce}`}
+          center={mapCenter}
+          zoom={12}
+          className="map-canvas"
+          scrollWheelZoom
+          style={{ width: "100%", height: "100%", minHeight: 440 }}
+        >
           <TileLayer
-            attribution="&copy; OpenStreetMap"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxZoom={19}
           />
-          <FitBounds points={points} />
+          <MapReadyFix />
+          <FitBounds points={points} resetKey={`${day}-${mapNonce}`} />
+
+          {company &&
+            Number.isFinite(company.lat) &&
+            Number.isFinite(company.lng) && (
+              <Marker
+                position={[company.lat, company.lng]}
+                icon={L.divIcon({
+                  className: "company-pin-icon",
+                  html: `<span class="company-pin-mark"></span>`,
+                  iconSize: [28, 36],
+                  iconAnchor: [14, 34],
+                })}
+              >
+                <Popup>
+                  <div dir="rtl">
+                    <strong>{company.name || "موقع الشركة"}</strong>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+
           {orders.map((order) => {
             if (
               !Number.isFinite(Number(order.latitude)) ||
@@ -175,6 +258,10 @@ export default function AdminOpsHomePage() {
                 <Popup>
                   <div dir="rtl">
                     <strong>{order.customer_name}</strong>
+                    {order.customer_phone ? <p>الرقم: {order.customer_phone}</p> : null}
+                    {order.customer_address ? (
+                      <p>الموقع: {order.customer_address}</p>
+                    ) : null}
                     <p>المندوب: {order.agent_name}</p>
                     <p>الحالة: {meta.label}</p>
                     <p>المبلغ: {order.amount}</p>
@@ -183,6 +270,7 @@ export default function AdminOpsHomePage() {
               </Marker>
             );
           })}
+
           {agentLocations.map((agent) => (
             <Marker
               key={`agent-${agent.agent_id}`}
@@ -201,7 +289,16 @@ export default function AdminOpsHomePage() {
         </MapContainer>
       </div>
 
-      <h3 style={{ marginTop: 18 }}>المندوبون على الخريطة ({agentLocations.length})</h3>
+      {!points.length && (
+        <p className="empty-hint" style={{ marginTop: 10 }}>
+          لا توجد نقاط على الخريطة بعد. أضف زبائن بضغط الخريطة، أو سجّل طلبات، أو
+          فعّل GPS للمندوب.
+        </p>
+      )}
+
+      <h3 style={{ marginTop: 18 }}>
+        المندوبون على الخريطة ({agentLocations.length})
+      </h3>
       <div className="table-wrap">
         <table className="data-table">
           <thead>
@@ -216,7 +313,8 @@ export default function AdminOpsHomePage() {
             {agentLocations.length === 0 ? (
               <tr>
                 <td colSpan={4} className="empty-hint">
-                  لا يوجد مندوب متصل بالموقع حاليًا. عندما يفتح المندوب لوحته مع GPS يظهر هنا.
+                  لا يوجد مندوب متصل بالموقع حاليًا. عندما يفتح المندوب لوحته مع GPS
+                  يظهر هنا.
                 </td>
               </tr>
             ) : (
