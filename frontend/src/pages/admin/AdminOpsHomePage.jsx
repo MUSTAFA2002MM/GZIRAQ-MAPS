@@ -23,47 +23,83 @@ function agentIcon() {
   });
 }
 
+function companyMapIcon() {
+  return L.divIcon({
+    className: "company-pin-icon",
+    html: `<span class="company-pin-mark"></span>`,
+    iconSize: [28, 36],
+    iconAnchor: [14, 34],
+  });
+}
+
+function isValidLatLng(lat, lng) {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    Math.abs(latitude) <= 90 &&
+    Math.abs(longitude) <= 180
+  );
+}
+
 function MapReadyFix() {
   const map = useMap();
 
   useEffect(() => {
     const refresh = () => {
-      map.invalidateSize({ animate: false });
+      try {
+        map.invalidateSize({ animate: false });
+      } catch {
+        // map may be disposed during route change
+      }
     };
 
     refresh();
-    const t1 = setTimeout(refresh, 150);
-    const t2 = setTimeout(refresh, 600);
+    const timers = [100, 300, 800, 1600].map((ms) => setTimeout(refresh, ms));
+
     window.addEventListener("resize", refresh);
 
+    const container = map.getContainer();
+    let observer;
+    if (typeof ResizeObserver !== "undefined" && container) {
+      observer = new ResizeObserver(() => refresh());
+      observer.observe(container.parentElement || container);
+    }
+
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
+      timers.forEach(clearTimeout);
       window.removeEventListener("resize", refresh);
+      observer?.disconnect();
     };
   }, [map]);
 
   return null;
 }
 
-function FitBounds({ points, resetKey }) {
+/** Fit once per day/refresh — do not jump the map on every GPS poll. */
+function FitBoundsOnce({ points, resetKey }) {
   const map = useMap();
-  const lastKey = useRef("");
-
-  useEffect(() => {
-    lastKey.current = "";
-  }, [resetKey]);
+  const fittedKey = useRef("");
 
   useEffect(() => {
     if (!points.length) return;
-
-    const key = points.map((point) => point.join(",")).join("|");
-    if (key === lastKey.current) return;
-    lastKey.current = key;
+    if (fittedKey.current === resetKey) return;
 
     map.invalidateSize({ animate: false });
-    map.fitBounds(points, { padding: [48, 48], maxZoom: 15 });
-  }, [map, points]);
+
+    if (points.length === 1) {
+      map.setView(points[0], 14, { animate: false });
+    } else {
+      map.fitBounds(points, {
+        padding: [56, 56],
+        maxZoom: 15,
+        animate: false,
+      });
+    }
+
+    fittedKey.current = resetKey;
+  }, [map, points, resetKey]);
 
   return null;
 }
@@ -109,31 +145,38 @@ export default function AdminOpsHomePage() {
     return () => clearInterval(timer);
   }, [day]);
 
-  const points = useMemo(() => {
-    const orderPoints = orders
-      .filter(
-        (order) =>
-          Number.isFinite(Number(order.latitude)) &&
-          Number.isFinite(Number(order.longitude))
-      )
-      .map((order) => [Number(order.latitude), Number(order.longitude)]);
+  const orderPoints = useMemo(
+    () =>
+      orders
+        .filter((order) => isValidLatLng(order.latitude, order.longitude))
+        .map((order) => [Number(order.latitude), Number(order.longitude)]),
+    [orders]
+  );
 
-    const agentPoints = agentLocations
-      .filter(
-        (item) =>
-          Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng))
-      )
-      .map((item) => [Number(item.lat), Number(item.lng)]);
+  const agentPoints = useMemo(
+    () =>
+      agentLocations
+        .filter((item) => isValidLatLng(item.lat, item.lng))
+        .map((item) => [Number(item.lat), Number(item.lng)]),
+    [agentLocations]
+  );
 
-    return [...orderPoints, ...agentPoints];
-  }, [orders, agentLocations]);
-
-  const mapCenter = useMemo(() => {
-    if (company && Number.isFinite(company.lat) && Number.isFinite(company.lng)) {
-      return [company.lat, company.lng];
-    }
-    return defaultCenter;
+  const companyPoint = useMemo(() => {
+    if (!company || !isValidLatLng(company.lat, company.lng)) return null;
+    return [Number(company.lat), Number(company.lng)];
   }, [company]);
+
+  /** Bounds used only for initial framing (orders + agents + company). */
+  const fitPoints = useMemo(() => {
+    const all = [...orderPoints, ...agentPoints];
+    if (companyPoint) all.push(companyPoint);
+    return all;
+  }, [orderPoints, agentPoints, companyPoint]);
+
+  const mapCenter = companyPoint || defaultCenter;
+  const resetKey = `${day}-${mapNonce}`;
+  const hasMarkers =
+    orderPoints.length > 0 || agentPoints.length > 0 || Boolean(companyPoint);
 
   return (
     <section className="panel">
@@ -200,50 +243,42 @@ export default function AdminOpsHomePage() {
           <i style={{ background: "#111", border: "2px solid #f5c518" }} />
           موقع المندوب المباشر
         </span>
+        <span className="legend-item">
+          <i style={{ background: "#c62828" }} />
+          موقع الشركة
+        </span>
       </div>
 
-      <div className="dashboard-map">
+      <div className="dashboard-map admin-live-map">
         <MapContainer
-          key={`admin-map-${day}-${mapNonce}`}
+          key={`admin-map-${resetKey}`}
           center={mapCenter}
           zoom={12}
           className="map-canvas"
           scrollWheelZoom
-          style={{ width: "100%", height: "100%", minHeight: 440 }}
+          style={{ width: "100%", height: "100%", minHeight: 480 }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CARTO'
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
             maxZoom={19}
+            subdomains="abcd"
           />
           <MapReadyFix />
-          <FitBounds points={points} resetKey={`${day}-${mapNonce}`} />
+          <FitBoundsOnce points={fitPoints} resetKey={resetKey} />
 
-          {company &&
-            Number.isFinite(company.lat) &&
-            Number.isFinite(company.lng) && (
-              <Marker
-                position={[company.lat, company.lng]}
-                icon={L.divIcon({
-                  className: "company-pin-icon",
-                  html: `<span class="company-pin-mark"></span>`,
-                  iconSize: [28, 36],
-                  iconAnchor: [14, 34],
-                })}
-              >
-                <Popup>
-                  <div dir="rtl">
-                    <strong>{company.name || "موقع الشركة"}</strong>
-                  </div>
-                </Popup>
-              </Marker>
-            )}
+          {companyPoint && (
+            <Marker position={companyPoint} icon={companyMapIcon()}>
+              <Popup>
+                <div dir="rtl">
+                  <strong>{company?.name || "موقع الشركة"}</strong>
+                </div>
+              </Popup>
+            </Marker>
+          )}
 
           {orders.map((order) => {
-            if (
-              !Number.isFinite(Number(order.latitude)) ||
-              !Number.isFinite(Number(order.longitude))
-            ) {
+            if (!isValidLatLng(order.latitude, order.longitude)) {
               return null;
             }
 
@@ -271,28 +306,32 @@ export default function AdminOpsHomePage() {
             );
           })}
 
-          {agentLocations.map((agent) => (
-            <Marker
-              key={`agent-${agent.agent_id}`}
-              position={[Number(agent.lat), Number(agent.lng)]}
-              icon={agentIcon()}
-            >
-              <Popup>
-                <div dir="rtl">
-                  <strong>{agent.agent_name}</strong>
-                  <p>موقع مباشر للمندوب</p>
-                  <p>آخر تحديث: {formatUpdatedAt(agent.updated_at)}</p>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+          {agentLocations.map((agent) => {
+            if (!isValidLatLng(agent.lat, agent.lng)) return null;
+
+            return (
+              <Marker
+                key={`agent-${agent.agent_id}`}
+                position={[Number(agent.lat), Number(agent.lng)]}
+                icon={agentIcon()}
+              >
+                <Popup>
+                  <div dir="rtl">
+                    <strong>{agent.agent_name}</strong>
+                    <p>موقع مباشر للمندوب</p>
+                    <p>آخر تحديث: {formatUpdatedAt(agent.updated_at)}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
         </MapContainer>
       </div>
 
-      {!points.length && (
+      {!hasMarkers && (
         <p className="empty-hint" style={{ marginTop: 10 }}>
-          لا توجد نقاط على الخريطة بعد. أضف زبائن بضغط الخريطة، أو سجّل طلبات، أو
-          فعّل GPS للمندوب.
+          لا توجد نقاط على الخريطة بعد. ثبّت موقع الشركة من قائمة الشركة، أو أضف زبائن
+          بضغط الخريطة، أو سجّل طلبات، أو فعّل GPS للمندوب.
         </p>
       )}
 
