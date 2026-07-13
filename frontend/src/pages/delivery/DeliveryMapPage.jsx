@@ -25,6 +25,92 @@ function statusIcon(color) {
   });
 }
 
+function buildGoogleMapsUrl(order, fromLocation) {
+  const lat = Number(order.latitude);
+  const lng = Number(order.longitude);
+
+  if (order.customer_maps_url) {
+    return order.customer_maps_url;
+  }
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    const query = encodeURIComponent(
+      order.customer_address || order.customer_name || ""
+    );
+    return query ? `https://www.google.com/maps/search/?api=1&query=${query}` : "";
+  }
+
+  if (
+    fromLocation &&
+    Number.isFinite(fromLocation.lat) &&
+    Number.isFinite(fromLocation.lng)
+  ) {
+    return `https://www.google.com/maps/dir/?api=1&origin=${fromLocation.lat},${fromLocation.lng}&destination=${lat},${lng}&travelmode=driving`;
+  }
+
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+}
+
+function buildWazeUrl(order) {
+  const lat = Number(order.latitude);
+  const lng = Number(order.longitude);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return "";
+  }
+
+  return `https://waze.com/ul?ll=${lat}%2C${lng}&navigate=yes`;
+}
+
+function openExternalNav(url) {
+  if (!url) return;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function OrderNavButtons({ order, fromLocation }) {
+  const googleUrl = buildGoogleMapsUrl(order, fromLocation);
+  const wazeUrl = buildWazeUrl(order);
+  const hasPoint =
+    Number.isFinite(Number(order.latitude)) &&
+    Number.isFinite(Number(order.longitude));
+
+  if (!googleUrl && !wazeUrl) {
+    return (
+      <p className="empty-hint" style={{ margin: 0 }}>
+        لا يوجد موقع محفوظ لهذا الزبون
+      </p>
+    );
+  }
+
+  return (
+    <div className="nav-actions">
+      {googleUrl && (
+        <button
+          className="nav-button google"
+          type="button"
+          onClick={() => openExternalNav(googleUrl)}
+        >
+          Google Maps
+        </button>
+      )}
+      {wazeUrl && (
+        <button
+          className="nav-button waze"
+          type="button"
+          onClick={() => openExternalNav(wazeUrl)}
+        >
+          Waze
+        </button>
+      )}
+      {!hasPoint && order.customer_address && (
+        <p className="empty-hint" style={{ margin: 0, width: "100%" }}>
+          الموقع كتابة: {order.customer_address}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function DeliveryMapPage() {
   const { user } = useAuth();
   const [day, setDay] = useState("today");
@@ -340,12 +426,17 @@ export default function DeliveryMapPage() {
                 <Popup>
                   <div dir="rtl">
                     <strong>{order.customer_name}</strong>
+                    {order.customer_phone ? <p>الرقم: {order.customer_phone}</p> : null}
+                    {order.customer_address ? (
+                      <p>الموقع: {order.customer_address}</p>
+                    ) : null}
                     <p>{meta.label}</p>
                     <p>
                       {order.distanceMeters === null
                         ? "فعّل GPS لمعرفة المسافة"
                         : `المسافة: ${order.distanceMeters}م`}
                     </p>
+                    <OrderNavButtons order={order} fromLocation={location} />
                     {(order.status === "nearby" ||
                       order.status === "registered") && (
                       <div className="popup-actions">
@@ -380,14 +471,21 @@ export default function DeliveryMapPage() {
       <h3>طلبات اليوم ({openOrders.length} مفتوحة)</h3>
       <div className="chips-list">
         {ordersWithDistance.map((order) => (
-          <div key={order.id} className="chip-row">
-            <span>
-              {order.customer_name} · {ORDER_STATUS[order.status]?.label} ·{" "}
-              {order.amount}
-              {order.distanceMeters !== null
-                ? ` · ${order.distanceMeters}م`
-                : " · بانتظار GPS"}
-            </span>
+          <div key={order.id} className="order-card">
+            <div className="order-card-main">
+              <strong>{order.customer_name}</strong>
+              <p>
+                {ORDER_STATUS[order.status]?.label} · المبلغ: {order.amount}
+                {order.distanceMeters !== null
+                  ? ` · المسافة: ${order.distanceMeters}م`
+                  : " · بانتظار GPS"}
+              </p>
+              {order.customer_phone ? <p>الرقم: {order.customer_phone}</p> : null}
+              {order.customer_address ? (
+                <p>الموقع: {order.customer_address}</p>
+              ) : null}
+              <OrderNavButtons order={order} fromLocation={location} />
+            </div>
             {(order.status === "nearby" || order.status === "registered") && (
               <div className="table-actions">
                 <button

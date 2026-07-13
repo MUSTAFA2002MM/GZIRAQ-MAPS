@@ -819,6 +819,55 @@
   transform: translateX(-2px);
 }
 
+.order-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.order-card-main {
+  display: grid;
+  gap: 6px;
+}
+
+.order-card-main p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.nav-button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.nav-button.google {
+  background: #1558e0;
+  color: #fff;
+}
+
+.nav-button.waze {
+  background: #33ccff;
+  color: #082033;
+}
+
+.nav-button:hover {
+  filter: brightness(1.05);
+}
+
 .action-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
