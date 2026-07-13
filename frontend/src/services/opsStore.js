@@ -21,6 +21,16 @@ function todayKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+/** Reject missing, NaN, and Null Island (0,0) which pull the map to the ocean. */
+export function isValidCoords(lat, lng) {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return false;
+  if (latitude === 0 && longitude === 0) return false;
+  return true;
+}
+
 function createDefaultOps() {
   return {
     adminPassword: "Admin@123456",
@@ -522,7 +532,7 @@ export const opsApi = {
       return fail("أدخل موقع الزبون بصيغة كتابة");
     }
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (!isValidCoords(lat, lng)) {
       return fail("حدد موقع الزبون على الخريطة");
     }
 
@@ -575,15 +585,18 @@ export const opsApi = {
 
       const lat = Number(order.latitude);
       const lng = Number(order.longitude);
-      const hasPoint = Number.isFinite(lat) && Number.isFinite(lng);
+      const hasPoint = isValidCoords(lat, lng);
+      const customerLat = Number(customer.latitude);
+      const customerLng = Number(customer.longitude);
+      const customerHasPoint = isValidCoords(customerLat, customerLng);
 
       return {
         ...order,
         customer_phone: order.customer_phone || customer.phone || "",
         customer_address: order.customer_address || customer.address || "",
         customer_maps_url: order.customer_maps_url || customer.mapsUrl || "",
-        latitude: hasPoint ? lat : customer.latitude,
-        longitude: hasPoint ? lng : customer.longitude,
+        latitude: hasPoint ? lat : customerHasPoint ? customerLat : null,
+        longitude: hasPoint ? lng : customerHasPoint ? customerLng : null,
       };
     });
 
@@ -645,8 +658,7 @@ export const opsApi = {
 
     if (status === "delivered" || status === "returned") {
       if (
-        !Number.isFinite(Number(order.latitude)) ||
-        !Number.isFinite(Number(order.longitude))
+        !isValidCoords(order.latitude, order.longitude)
       ) {
         return fail("هذا الطلب بلا موقع زبون على الخريطة");
       }

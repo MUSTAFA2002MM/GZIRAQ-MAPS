@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
-import { opsApi } from "../../services/opsStore";
+import { isValidCoords, opsApi } from "../../services/opsStore";
 
 const markerIcon = new L.Icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -156,7 +156,11 @@ export default function AdminCustomersPage() {
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <ClickPicker onPick={onPick} />
           {picked && <Marker position={picked} icon={markerIcon} />}
-          {customers.map((customer) => (
+          {customers
+            .filter((customer) =>
+              isValidCoords(customer.latitude, customer.longitude)
+            )
+            .map((customer) => (
             <Marker
               key={customer.id}
               position={[customer.latitude, customer.longitude]}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
-import { ORDER_STATUS, opsApi } from "../../services/opsStore";
+import { ORDER_STATUS, isValidCoords, opsApi } from "../../services/opsStore";
 
 const defaultCenter = [33.3152, 44.3661];
 
@@ -32,17 +32,6 @@ function companyMapIcon() {
     iconSize: [28, 36],
     iconAnchor: [14, 34],
   });
-}
-
-function isValidLatLng(lat, lng) {
-  const latitude = Number(lat);
-  const longitude = Number(lng);
-  return (
-    Number.isFinite(latitude) &&
-    Number.isFinite(longitude) &&
-    Math.abs(latitude) <= 90 &&
-    Math.abs(longitude) <= 180
-  );
 }
 
 function MapReadyFix() {
@@ -158,7 +147,7 @@ export default function AdminOpsHomePage() {
   const orderPoints = useMemo(
     () =>
       orders
-        .filter((order) => isValidLatLng(order.latitude, order.longitude))
+        .filter((order) => isValidCoords(order.latitude, order.longitude))
         .map((order) => [Number(order.latitude), Number(order.longitude)]),
     [orders]
   );
@@ -166,13 +155,13 @@ export default function AdminOpsHomePage() {
   const agentPoints = useMemo(
     () =>
       agentLocations
-        .filter((item) => isValidLatLng(item.lat, item.lng))
+        .filter((item) => isValidCoords(item.lat, item.lng))
         .map((item) => [Number(item.lat), Number(item.lng)]),
     [agentLocations]
   );
 
   const companyPoint = useMemo(() => {
-    if (!company || !isValidLatLng(company.lat, company.lng)) return null;
+    if (!company || !isValidCoords(company.lat, company.lng)) return null;
     return [Number(company.lat), Number(company.lng)];
   }, [company]);
 
@@ -287,7 +276,7 @@ export default function AdminOpsHomePage() {
             )}
 
             {orders.map((order) => {
-              if (!isValidLatLng(order.latitude, order.longitude)) return null;
+              if (!isValidCoords(order.latitude, order.longitude)) return null;
               const meta = ORDER_STATUS[order.status] || ORDER_STATUS.registered;
               return (
                 <Marker
@@ -314,7 +303,7 @@ export default function AdminOpsHomePage() {
             })}
 
             {agentLocations.map((agent) => {
-              if (!isValidLatLng(agent.lat, agent.lng)) return null;
+              if (!isValidCoords(agent.lat, agent.lng)) return null;
               return (
                 <Marker
                   key={`agent-${agent.agent_id}`}
