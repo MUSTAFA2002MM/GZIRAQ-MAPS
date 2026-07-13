@@ -6,6 +6,8 @@ export default function AdminEmployeesPage() {
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("success");
+  const [saving, setSaving] = useState(false);
 
   const load = async () => {
     const result = await opsApi.listEmployees();
@@ -18,23 +20,42 @@ export default function AdminEmployeesPage() {
 
   const onSubmit = async (event) => {
     event.preventDefault();
-    const result = await opsApi.createEmployee({ name, pin });
+    event.stopPropagation();
+    if (saving) return;
 
-    if (!result.ok) {
-      setMessage(result.data.message);
-      return;
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const result = await opsApi.createEmployee({ name, pin });
+
+      if (!result.ok) {
+        setMessageType("error");
+        setMessage(result.data.message || "تعذر إضافة الموظف");
+        return;
+      }
+
+      setName("");
+      setPin("");
+      setMessageType("success");
+      setMessage("تمت إضافة الموظف بنجاح");
+      setEmployees(result.data.employees || []);
+    } finally {
+      setSaving(false);
     }
-
-    setName("");
-    setPin("");
-    setMessage("تمت إضافة الموظف — يظهر الآن لكل الأجهزة");
-    await load();
   };
 
   const remove = async (id) => {
     if (!window.confirm("حذف الموظف؟")) return;
-    await opsApi.deleteEmployee(id);
-    await load();
+    const result = await opsApi.deleteEmployee(id);
+    if (result.ok) {
+      setEmployees(result.data.employees || []);
+      setMessageType("success");
+      setMessage("تم حذف الموظف");
+    } else {
+      setMessageType("error");
+      setMessage(result.data.message || "تعذر الحذف");
+    }
   };
 
   return (
@@ -46,7 +67,7 @@ export default function AdminEmployeesPage() {
         </div>
       </header>
 
-      {message && <div className="message success">{message}</div>}
+      {message && <div className={`message ${messageType}`}>{message}</div>}
 
       <form className="panel-form inline-form" onSubmit={onSubmit}>
         <input
@@ -63,26 +84,30 @@ export default function AdminEmployeesPage() {
           inputMode="numeric"
           required
         />
-        <button className="primary-button" type="submit">
-          إضافة موظف
+        <button className="primary-button" type="submit" disabled={saving}>
+          {saving ? "جارٍ الإضافة..." : "إضافة موظف"}
         </button>
       </form>
 
       <div className="chips-list">
-        {employees.map((employee) => (
-          <div key={employee.id} className="chip-row">
-            <span>
-              {employee.name} · PIN: {employee.pin}
-            </span>
-            <button
-              className="danger-button"
-              type="button"
-              onClick={() => remove(employee.id)}
-            >
-              حذف
-            </button>
-          </div>
-        ))}
+        {employees.length === 0 ? (
+          <p className="empty-hint">لا يوجد موظفون بعد</p>
+        ) : (
+          employees.map((employee) => (
+            <div key={employee.id} className="chip-row">
+              <span>
+                {employee.name} · PIN: {employee.pin}
+              </span>
+              <button
+                className="danger-button"
+                type="button"
+                onClick={() => remove(employee.id)}
+              >
+                حذف
+              </button>
+            </div>
+          ))
+        )}
       </div>
     </section>
   );

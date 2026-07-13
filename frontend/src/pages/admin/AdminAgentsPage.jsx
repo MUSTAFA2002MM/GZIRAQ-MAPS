@@ -6,6 +6,8 @@ export default function AdminAgentsPage() {
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("success");
+  const [saving, setSaving] = useState(false);
 
   const load = async () => {
     const result = await opsApi.listAgents();
@@ -18,23 +20,42 @@ export default function AdminAgentsPage() {
 
   const onSubmit = async (event) => {
     event.preventDefault();
-    const result = await opsApi.createAgent({ name, pin });
+    event.stopPropagation();
+    if (saving) return;
 
-    if (!result.ok) {
-      setMessage(result.data.message);
-      return;
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const result = await opsApi.createAgent({ name, pin });
+
+      if (!result.ok) {
+        setMessageType("error");
+        setMessage(result.data.message || "تعذر إضافة المندوب");
+        return;
+      }
+
+      setName("");
+      setPin("");
+      setMessageType("success");
+      setMessage("تمت إضافة المندوب بنجاح");
+      setAgents(result.data.agents || []);
+    } finally {
+      setSaving(false);
     }
-
-    setName("");
-    setPin("");
-    setMessage("تمت إضافة المندوب — يظهر الآن لكل الأجهزة");
-    await load();
   };
 
   const remove = async (id) => {
     if (!window.confirm("حذف المندوب؟")) return;
-    await opsApi.deleteAgent(id);
-    await load();
+    const result = await opsApi.deleteAgent(id);
+    if (result.ok) {
+      setAgents(result.data.agents || []);
+      setMessageType("success");
+      setMessage("تم حذف المندوب");
+    } else {
+      setMessageType("error");
+      setMessage(result.data.message || "تعذر الحذف");
+    }
   };
 
   return (
@@ -46,7 +67,7 @@ export default function AdminAgentsPage() {
         </div>
       </header>
 
-      {message && <div className="message success">{message}</div>}
+      {message && <div className={`message ${messageType}`}>{message}</div>}
 
       <form className="panel-form inline-form" onSubmit={onSubmit}>
         <input
@@ -63,26 +84,30 @@ export default function AdminAgentsPage() {
           inputMode="numeric"
           required
         />
-        <button className="primary-button" type="submit">
-          إضافة مندوب
+        <button className="primary-button" type="submit" disabled={saving}>
+          {saving ? "جارٍ الإضافة..." : "إضافة مندوب"}
         </button>
       </form>
 
       <div className="chips-list">
-        {agents.map((agent) => (
-          <div key={agent.id} className="chip-row">
-            <span>
-              {agent.name} · PIN: {agent.pin}
-            </span>
-            <button
-              className="danger-button"
-              type="button"
-              onClick={() => remove(agent.id)}
-            >
-              حذف
-            </button>
-          </div>
-        ))}
+        {agents.length === 0 ? (
+          <p className="empty-hint">لا يوجد مندوبون بعد</p>
+        ) : (
+          agents.map((agent) => (
+            <div key={agent.id} className="chip-row">
+              <span>
+                {agent.name} · PIN: {agent.pin}
+              </span>
+              <button
+                className="danger-button"
+                type="button"
+                onClick={() => remove(agent.id)}
+              >
+                حذف
+              </button>
+            </div>
+          ))
+        )}
       </div>
     </section>
   );

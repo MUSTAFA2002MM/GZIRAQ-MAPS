@@ -29,6 +29,11 @@ function putOps(req, res) {
     ...defaults,
     ...incoming,
     adminPassword: current.adminPassword || defaults.adminPassword,
+    updatedAt: Math.max(
+      Number(incoming.updatedAt) || 0,
+      Number(current.updatedAt) || 0,
+      Date.now()
+    ),
     company: {
       ...defaults.company,
       ...(incoming.company || {}),

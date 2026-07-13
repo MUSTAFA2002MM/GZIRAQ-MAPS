@@ -31,6 +31,7 @@ function createDefaultOps() {
     orders: [],
     attendance: [],
     agentLocations: [],
+    updatedAt: 0,
     nextIds: {
       agent: 1,
       employee: 1,
@@ -71,6 +72,7 @@ function normalizeStore(parsed) {
     orders: parsed?.orders || [],
     attendance: parsed?.attendance || [],
     agentLocations: parsed?.agentLocations || [],
+    updatedAt: Number(parsed?.updatedAt) || 0,
     nextIds: {
       ...createDefaultOps().nextIds,
       ...(parsed?.nextIds || {}),
@@ -113,6 +115,17 @@ function storeHasData(store) {
   );
 }
 
+let opsQueue = Promise.resolve();
+
+function withOpsLock(task) {
+  const run = opsQueue.then(task, task);
+  opsQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
 async function pullRemoteOps() {
   try {
     const controller = new AbortController();
@@ -136,41 +149,81 @@ async function pullRemoteOps() {
 }
 
 async function pushRemoteOps(store) {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    await fetch(`${API_URL}/api/ops`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ store }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-  } catch {
-    // Keep local copy if server is unreachable.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  const response = await fetch(`${API_URL}/api/ops`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ store }),
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    throw new Error(`فشل حفظ البيانات على السيرفر (${response.status})`);
   }
+
+  const data = await response.json().catch(() => ({}));
+  return data?.store ? normalizeStore(data.store) : normalizeStore(store);
 }
 
 async function syncOpsFromServer() {
   const remote = await pullRemoteOps();
   const local = readLocalOps();
 
-  if (remote) {
-    if (!storeHasData(remote) && storeHasData(local)) {
-      await pushRemoteOps(local);
-      return local;
-    }
-    writeLocalOps(remote);
-    return remote;
+  if (!remote) {
+    return local;
   }
 
-  return local;
+  const localTs = Number(local.updatedAt) || 0;
+  const remoteTs = Number(remote.updatedAt) || 0;
+
+  // Keep newer local edits (e.g. just-added agents) and push them up.
+  if (localTs > remoteTs && storeHasData(local)) {
+    try {
+      const saved = await pushRemoteOps(local);
+      writeLocalOps({ ...saved, updatedAt: Math.max(localTs, Number(saved.updatedAt) || 0) });
+      return readLocalOps();
+    } catch (error) {
+      console.warn("ops push during sync failed:", error);
+      return local;
+    }
+  }
+
+  if (!storeHasData(remote) && storeHasData(local)) {
+    try {
+      const saved = await pushRemoteOps(local);
+      writeLocalOps(saved);
+      return readLocalOps();
+    } catch (error) {
+      console.warn("ops bootstrap push failed:", error);
+      return local;
+    }
+  }
+
+  writeLocalOps(remote);
+  return remote;
 }
 
 async function saveOps(store) {
-  writeLocalOps(store);
-  await pushRemoteOps(store);
-  return store;
+  const next = {
+    ...store,
+    updatedAt: Date.now(),
+  };
+  writeLocalOps(next);
+
+  try {
+    const saved = await pushRemoteOps(next);
+    const merged = {
+      ...saved,
+      updatedAt: Math.max(next.updatedAt, Number(saved.updatedAt) || 0),
+    };
+    writeLocalOps(merged);
+    return merged;
+  } catch (error) {
+    console.warn("ops save push failed, kept local copy:", error);
+    return next;
+  }
 }
 
 function ok(data) {
@@ -302,83 +355,105 @@ export const opsApi = {
   },
 
   async listAgents() {
-    const store = await syncOpsFromServer();
-    return ok({ agents: store.agents });
+    return withOpsLock(async () => {
+      const store = await syncOpsFromServer();
+      return ok({ agents: store.agents });
+    });
   },
 
   async createAgent({ name, pin }) {
-    const store = await syncOpsFromServer();
-    const cleanName = String(name || "").trim();
-    const cleanPin = String(pin || "").trim();
+    return withOpsLock(async () => {
+      const store = await syncOpsFromServer();
+      const cleanName = String(name || "").trim();
+      const cleanPin = String(pin || "").trim();
 
-    if (!cleanName || !/^\d{4}$/.test(cleanPin)) {
-      return fail("أدخل اسم المندوب و PIN من 4 أرقام");
-    }
+      if (!cleanName || !/^\d{4}$/.test(cleanPin)) {
+        return fail("أدخل اسم المندوب و PIN من 4 أرقام");
+      }
 
-    if (store.agents.some((item) => item.pin === cleanPin)) {
-      return fail("رمز PIN مستخدم مسبقًا", 409);
-    }
+      if (store.agents.some((item) => item.pin === cleanPin)) {
+        return fail("رمز PIN مستخدم مسبقًا", 409);
+      }
 
-    const agent = {
-      id: store.nextIds.agent++,
-      name: cleanName,
-      pin: cleanPin,
-      role: "delivery",
-      is_active: true,
-      created_at: new Date().toISOString(),
-    };
+      const agent = {
+        id: store.nextIds.agent++,
+        name: cleanName,
+        pin: cleanPin,
+        role: "delivery",
+        is_active: true,
+        created_at: new Date().toISOString(),
+      };
 
-    store.agents.unshift(agent);
-    await saveOps(store);
-    return { ok: true, status: 201, data: { success: true, agent } };
+      store.agents.unshift(agent);
+      const saved = await saveOps(store);
+      return {
+        ok: true,
+        status: 201,
+        data: { success: true, agent, agents: saved.agents },
+      };
+    });
   },
 
   async deleteAgent(id) {
-    const store = await syncOpsFromServer();
-    store.agents = store.agents.filter((item) => Number(item.id) !== Number(id));
-    await saveOps(store);
-    return ok({ message: "تم حذف المندوب" });
+    return withOpsLock(async () => {
+      const store = await syncOpsFromServer();
+      store.agents = store.agents.filter(
+        (item) => Number(item.id) !== Number(id)
+      );
+      const saved = await saveOps(store);
+      return ok({ message: "تم حذف المندوب", agents: saved.agents });
+    });
   },
 
   async listEmployees() {
-    const store = await syncOpsFromServer();
-    return ok({ employees: store.employees });
+    return withOpsLock(async () => {
+      const store = await syncOpsFromServer();
+      return ok({ employees: store.employees });
+    });
   },
 
   async createEmployee({ name, pin }) {
-    const store = await syncOpsFromServer();
-    const cleanName = String(name || "").trim();
-    const cleanPin = String(pin || "").trim();
+    return withOpsLock(async () => {
+      const store = await syncOpsFromServer();
+      const cleanName = String(name || "").trim();
+      const cleanPin = String(pin || "").trim();
 
-    if (!cleanName || !/^\d{4}$/.test(cleanPin)) {
-      return fail("أدخل اسم الموظف و PIN من 4 أرقام");
-    }
+      if (!cleanName || !/^\d{4}$/.test(cleanPin)) {
+        return fail("أدخل اسم الموظف و PIN من 4 أرقام");
+      }
 
-    if (store.employees.some((item) => item.pin === cleanPin)) {
-      return fail("رمز PIN مستخدم مسبقًا", 409);
-    }
+      if (store.employees.some((item) => item.pin === cleanPin)) {
+        return fail("رمز PIN مستخدم مسبقًا", 409);
+      }
 
-    const employee = {
-      id: store.nextIds.employee++,
-      name: cleanName,
-      pin: cleanPin,
-      role: "employee",
-      is_active: true,
-      created_at: new Date().toISOString(),
-    };
+      const employee = {
+        id: store.nextIds.employee++,
+        name: cleanName,
+        pin: cleanPin,
+        role: "employee",
+        is_active: true,
+        created_at: new Date().toISOString(),
+      };
 
-    store.employees.unshift(employee);
-    await saveOps(store);
-    return { ok: true, status: 201, data: { success: true, employee } };
+      store.employees.unshift(employee);
+      const saved = await saveOps(store);
+      return {
+        ok: true,
+        status: 201,
+        data: { success: true, employee, employees: saved.employees },
+      };
+    });
   },
 
   async deleteEmployee(id) {
-    const store = await syncOpsFromServer();
-    store.employees = store.employees.filter(
-      (item) => Number(item.id) !== Number(id)
-    );
-    await saveOps(store);
-    return ok({ message: "تم حذف الموظف" });
+    return withOpsLock(async () => {
+      const store = await syncOpsFromServer();
+      store.employees = store.employees.filter(
+        (item) => Number(item.id) !== Number(id)
+      );
+      const saved = await saveOps(store);
+      return ok({ message: "تم حذف الموظف", employees: saved.employees });
+    });
   },
 
   async loginByPin({ role, id, pin }) {
