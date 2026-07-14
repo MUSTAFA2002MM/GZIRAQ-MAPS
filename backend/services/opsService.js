@@ -7,6 +7,10 @@ const DATA_FILE = path.join(DATA_DIR, "ops.json");
 function createDefaultOps() {
   return {
     adminPassword: "Admin@123456",
+    adminProfile: {
+      name: "مصطفى كوانزو",
+      avatar: "",
+    },
     company: {
       lat: 33.3152,
       lng: 44.3661,
@@ -28,6 +32,15 @@ function createDefaultOps() {
       order: 1,
       attendance: 1,
     },
+  };
+}
+
+function normalizeAdminProfile(profile) {
+  const defaults = createDefaultOps().adminProfile;
+  const source = profile || {};
+  return {
+    name: String(source.name || defaults.name).trim() || defaults.name,
+    avatar: String(source.avatar || "").trim(),
   };
 }
 
@@ -64,6 +77,7 @@ function readStore() {
     return {
       ...createDefaultOps(),
       ...parsed,
+      adminProfile: normalizeAdminProfile(parsed.adminProfile),
       company: normalizeCompany(parsed.company),
       agents: parsed.agents || [],
       employees: parsed.employees || [],
@@ -89,6 +103,7 @@ function writeStore(store) {
 
 module.exports = {
   createDefaultOps,
+  normalizeAdminProfile,
   readStore,
   writeStore,
 };

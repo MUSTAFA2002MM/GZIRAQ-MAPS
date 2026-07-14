@@ -48,6 +48,14 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const updateUser = (patch) => {
+    if (!user) return null;
+    const next = normalizeUser({ ...user, ...patch });
+    if (token) saveSession(token, next);
+    setUser(next);
+    return next;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -58,6 +66,7 @@ export function AuthProvider({ children }) {
         loginAdmin,
         loginByPin,
         logout,
+        updateUser,
       }}
     >
       {children}

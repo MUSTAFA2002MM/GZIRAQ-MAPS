@@ -1,4 +1,9 @@
-const { readStore, writeStore, createDefaultOps } = require("../services/opsService");
+const {
+  readStore,
+  writeStore,
+  createDefaultOps,
+  normalizeAdminProfile,
+} = require("../services/opsService");
 
 function publicStore(store) {
   const safe = { ...store };
@@ -29,6 +34,9 @@ function putOps(req, res) {
     ...defaults,
     ...incoming,
     adminPassword: current.adminPassword || defaults.adminPassword,
+    adminProfile: normalizeAdminProfile(
+      incoming.adminProfile || current.adminProfile
+    ),
     updatedAt: Math.max(
       Number(incoming.updatedAt) || 0,
       Number(current.updatedAt) || 0,
@@ -71,15 +79,18 @@ function adminLogin(req, res) {
     });
   }
 
+  const profile = normalizeAdminProfile(store.adminProfile);
+
   return res.json({
     success: true,
     token: `ops-admin-${Date.now()}`,
     user: {
       id: 1,
-      name: "المدير",
+      name: profile.name || "المدير",
       email: "admin@gziraq.com",
       role: "admin",
       is_active: true,
+      avatar: profile.avatar || "",
     },
   });
 }

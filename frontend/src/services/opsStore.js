@@ -91,6 +91,10 @@ function resolveCustomerCoords({ mapsUrl, latitude, longitude }) {
 function createDefaultOps() {
   return {
     adminPassword: "Admin@123456",
+    adminProfile: {
+      name: "مصطفى كوانزو",
+      avatar: "",
+    },
     company: { ...DEFAULT_COMPANY },
     agents: [],
     employees: [],
@@ -106,6 +110,15 @@ function createDefaultOps() {
       order: 1,
       attendance: 1,
     },
+  };
+}
+
+function normalizeAdminProfile(profile) {
+  const defaults = createDefaultOps().adminProfile;
+  const source = profile || {};
+  return {
+    name: String(source.name || defaults.name).trim() || defaults.name,
+    avatar: String(source.avatar || "").trim(),
   };
 }
 
@@ -132,6 +145,7 @@ function normalizeStore(parsed) {
   const next = {
     ...createDefaultOps(),
     ...parsed,
+    adminProfile: normalizeAdminProfile(parsed?.adminProfile),
     company: normalizeCompany(parsed?.company),
     agents: parsed?.agents || [],
     employees: parsed?.employees || [],
@@ -353,6 +367,41 @@ export const opsApi = {
 
     await saveOps(store);
     return ok({ company: store.company, message: "تم تثبيت موقع الشركة" });
+  },
+
+  async getAdminProfile() {
+    const store = await syncOpsFromServer();
+    return normalizeAdminProfile(store.adminProfile);
+  },
+
+  async updateAdminProfile({ name, avatar }) {
+    const store = await syncOpsFromServer();
+    const nextName = String(name || "").trim();
+    const nextAvatar = String(avatar || "").trim();
+
+    if (!nextName) {
+      return fail("أدخل اسم المدير");
+    }
+
+    if (nextAvatar && !nextAvatar.startsWith("data:image/")) {
+      return fail("صيغة صورة الملف الشخصي غير صالحة");
+    }
+
+    // Keep avatars reasonably small inside ops.json
+    if (nextAvatar.length > 900_000) {
+      return fail("الصورة كبيرة جدًا. اختر صورة أوضح وأصغر");
+    }
+
+    store.adminProfile = normalizeAdminProfile({
+      name: nextName,
+      avatar: nextAvatar,
+    });
+
+    await saveOps(store);
+    return ok({
+      profile: store.adminProfile,
+      message: "تم حفظ الملف الشخصي للمدير",
+    });
   },
 
   async refresh() {
