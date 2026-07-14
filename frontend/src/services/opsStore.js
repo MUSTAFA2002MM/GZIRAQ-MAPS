@@ -523,7 +523,7 @@ export const opsApi = {
     });
   },
 
-  async loginByPin({ role, id, pin }) {
+  async loginByPin({ role, id, pin, location }) {
     const store = await syncOpsFromServer();
     const list = role === "delivery" ? store.agents : store.employees;
     const person = list.find((item) => Number(item.id) === Number(id));
@@ -534,6 +534,41 @@ export const opsApi = {
 
     if (!person.is_active) {
       return fail("الحساب غير مفعّل", 403);
+    }
+
+    // Agents and employees must be inside company geofence to log in
+    // (unless the admin disabled geographic check).
+    if (
+      (role === "delivery" || role === "employee") &&
+      store.company.requireGeofence !== false
+    ) {
+      const company = store.company;
+      const lat = Number(location?.lat);
+      const lng = Number(location?.lng);
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return fail(
+          "فعّل GPS وابقَ داخل نطاق موقع الشركة لتسجيل الدخول",
+          403
+        );
+      }
+
+      const meters = distanceMeters(
+        { lat, lng },
+        { lat: company.lat, lng: company.lng }
+      );
+      const accuracy = Number(location?.accuracy);
+      const accuracyBuffer = Number.isFinite(accuracy)
+        ? Math.min(Math.max(accuracy, 0), 150)
+        : 50;
+      const allowedRadius = Number(company.radiusMeters) + accuracyBuffer;
+
+      if (meters > allowedRadius) {
+        return fail(
+          `الدخول ممنوع خارج نطاق الشركة. المسافة الحالية ${Math.round(meters)}م (المسموح ≈ ${Math.round(allowedRadius)}م)`,
+          403
+        );
+      }
     }
 
     return ok({

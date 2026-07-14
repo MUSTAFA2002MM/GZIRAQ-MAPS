@@ -11,6 +11,43 @@ function roleHome(role) {
   return "/";
 }
 
+function readLoginLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("المتصفح لا يدعم تحديد الموقع (GPS)"));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+      },
+      (error) => {
+        if (error?.code === 1) {
+          reject(
+            new Error("يجب السماح بإذن الموقع لتسجيل دخول المندوب أو الموظف")
+          );
+          return;
+        }
+        reject(
+          new Error(
+            "تعذر قراءة GPS. افتح الموقع عبر HTTPS وفعّل الموقع ثم أعد المحاولة"
+          )
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 8000,
+      }
+    );
+  });
+}
+
 export default function LoginPage() {
   const { loginAdmin, loginByPin, isAuthenticated, user, loading } = useAuth();
   const navigate = useNavigate();
@@ -18,6 +55,7 @@ export default function LoginPage() {
   const [adminPassword, setAdminPassword] = useState("");
   const [agents, setAgents] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [company, setCompany] = useState(null);
   const [agentId, setAgentId] = useState("");
   const [agentPin, setAgentPin] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -30,11 +68,15 @@ export default function LoginPage() {
 
     const loadPeople = async () => {
       try {
-        const agentsResult = await opsApi.listAgents();
-        const employeesResult = await opsApi.listEmployees();
+        const [agentsResult, employeesResult, companyData] = await Promise.all([
+          opsApi.listAgents(),
+          opsApi.listEmployees(),
+          opsApi.getCompany(),
+        ]);
         if (!active) return;
         setAgents(agentsResult.data.agents || []);
         setEmployees(employeesResult.data.employees || []);
+        setCompany(companyData);
       } catch {
         if (!active) return;
         setMessage("تعذر تحميل قائمة المندوبين من السيرفر");
@@ -76,31 +118,41 @@ export default function LoginPage() {
     finishLogin(await loginAdmin(adminPassword));
   };
 
-  const onAgentLogin = async (event) => {
-    event.preventDefault();
+  const onPinLogin = async ({ role, id, pin }) => {
     setSubmitting(true);
     setMessage("");
-    finishLogin(
-      await loginByPin({
-        role: "delivery",
-        id: agentId,
-        pin: agentPin,
-      })
-    );
+
+    try {
+      const location = await readLoginLocation();
+      finishLogin(await loginByPin({ role, id, pin, location }));
+    } catch (error) {
+      setSubmitting(false);
+      setMessage(error.message || "تعذر التحقق من الموقع");
+    }
+  };
+
+  const onAgentLogin = async (event) => {
+    event.preventDefault();
+    await onPinLogin({
+      role: "delivery",
+      id: agentId,
+      pin: agentPin,
+    });
   };
 
   const onEmployeeLogin = async (event) => {
     event.preventDefault();
-    setSubmitting(true);
-    setMessage("");
-    finishLogin(
-      await loginByPin({
-        role: "employee",
-        id: employeeId,
-        pin: employeePin,
-      })
-    );
+    await onPinLogin({
+      role: "employee",
+      id: employeeId,
+      pin: employeePin,
+    });
   };
+
+  const geofenceHint =
+    company?.requireGeofence === false
+      ? "التحقق من نطاق الشركة متوقف من لوحة المدير"
+      : `الدخول فقط داخل نطاق الشركة (≈ ${company?.radiusMeters || 100}م من موقع الشركة)`;
 
   return (
     <main className="portal-page" dir="rtl">
@@ -116,6 +168,9 @@ export default function LoginPage() {
       </div>
 
       <p className="portal-title">اختر نوع الدخول:</p>
+      <p className="empty-hint" style={{ marginTop: -8, marginBottom: 18 }}>
+        {geofenceHint}
+      </p>
 
       <div className="portal-grid">
         <form className="portal-card" onSubmit={onAdminLogin}>
@@ -139,7 +194,7 @@ export default function LoginPage() {
 
         <form className="portal-card" onSubmit={onAgentLogin}>
           <h2>دخول المندوب</h2>
-          <p>مشاركة الموقع + طلبات التوصيل</p>
+          <p>مشاركة الموقع + طلبات التوصيل · يلزم GPS داخل نطاق الشركة</p>
           <label className="input-group">
             <span>اختر اسمك من القائمة</span>
             <select
@@ -179,7 +234,7 @@ export default function LoginPage() {
 
         <form className="portal-card" onSubmit={onEmployeeLogin}>
           <h2>دخول الموظف</h2>
-          <p>تسجيل حضور / انصراف فقط</p>
+          <p>تسجيل حضور / انصراف فقط · يلزم GPS داخل نطاق الشركة</p>
           <label className="input-group">
             <span>اختر اسمك من القائمة</span>
             <select

@@ -36,8 +36,8 @@ export function AuthProvider({ children }) {
     return applySession(result.data.token, result.data.user);
   };
 
-  const loginByPin = async ({ role, id, pin }) => {
-    const result = await opsApi.loginByPin({ role, id, pin });
+  const loginByPin = async ({ role, id, pin, location }) => {
+    const result = await opsApi.loginByPin({ role, id, pin, location });
     if (!result.ok) return result;
     return applySession(result.data.token, result.data.user);
   };
