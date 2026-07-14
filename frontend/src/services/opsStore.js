@@ -813,6 +813,7 @@ export const opsApi = {
       priority: Number(priority) || 0,
       status: "registered",
       collected: false,
+      customer_paid: false,
       day: todayKey(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -880,6 +881,23 @@ export const opsApi = {
             ? "تم تسجيل الراجع عند موقع الزبون"
             : "تم تحديث الطلب",
     });
+  },
+
+  async markCustomerPaid(orderId) {
+    const store = await syncOpsFromServer();
+    const order = store.orders.find(
+      (item) => Number(item.id) === Number(orderId)
+    );
+
+    if (!order) {
+      return fail("الطلب غير موجود", 404);
+    }
+
+    order.customer_paid = true;
+    order.customer_paid_at = new Date().toISOString();
+    order.updated_at = new Date().toISOString();
+    await saveOps(store);
+    return ok({ order, message: "تم تسجيل استلام المبلغ من الزبون" });
   },
 
   async markOrderCollected(orderId) {

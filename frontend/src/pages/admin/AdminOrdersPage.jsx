@@ -148,8 +148,19 @@ export default function AdminOrdersPage() {
     await load();
   };
 
+  const collectFromCustomer = async (orderId) => {
+    const result = await opsApi.markCustomerPaid(orderId);
+    if (!result.ok) {
+      setMessage(result.data.message || "تعذر تسجيل الاستلام من الزبون");
+      return;
+    }
+    setMessage("تم تسجيل استلام المبلغ من الزبون");
+    await load();
+  };
+
   const collect = async (orderId) => {
     await opsApi.markOrderCollected(orderId);
+    setMessage("تم تسجيل تحصيل المبلغ من المندوب");
     await load();
   };
 
@@ -349,19 +360,33 @@ export default function AdminOrdersPage() {
                     <td dir="ltr">{remaining}</td>
                     <td>{order.priority || "-"}</td>
                     <td>
-                      {order.status === "delivered" && !order.collected ? (
-                        <button
-                          className="secondary-button"
-                          type="button"
-                          onClick={() => collect(order.id)}
-                        >
-                          استلام المبلغ
-                        </button>
-                      ) : order.collected ? (
-                        "تم الاستلام"
-                      ) : (
-                        "—"
-                      )}
+                      <div className="collect-actions">
+                        {order.customer_paid ? (
+                          <span className="collect-done">
+                            تم استلام المبلغ من الزبون
+                          </span>
+                        ) : (
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => collectFromCustomer(order.id)}
+                          >
+                            استلام المبلغ من الزبون
+                          </button>
+                        )}
+
+                        {order.status === "delivered" && !order.collected ? (
+                          <button
+                            className="primary-button"
+                            type="button"
+                            onClick={() => collect(order.id)}
+                          >
+                            تحصيل من المندوب
+                          </button>
+                        ) : order.collected ? (
+                          <span className="collect-done">تم التحصيل من المندوب</span>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );
