@@ -31,6 +31,63 @@ export function isValidCoords(lat, lng) {
   return true;
 }
 
+/** Extract lat/lng from common Google Maps / Apple Maps URL formats. */
+export function parseMapsUrlCoords(url) {
+  const text = String(url || "").trim();
+  if (!text) return null;
+
+  const patterns = [
+    /@(-?\d+\.?\d*),\s*(-?\d+\.?\d*)/,
+    /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/,
+    /[?&](?:q|query|ll)=(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/i,
+    /[?&]destination=(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/i,
+    /\/search\/\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const lat = Number(match[1]);
+    const lng = Number(match[2]);
+    if (isValidCoords(lat, lng)) return { lat, lng };
+  }
+
+  return null;
+}
+
+export function buildCustomerMapsLink(customer) {
+  if (!customer) return "";
+  const mapsUrl = String(customer.mapsUrl || "").trim();
+  if (mapsUrl) return mapsUrl;
+
+  if (isValidCoords(customer.latitude, customer.longitude)) {
+    return `https://www.google.com/maps/search/?api=1&query=${customer.latitude},${customer.longitude}`;
+  }
+
+  const address = String(customer.address || "").trim();
+  if (address) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  }
+
+  return "";
+}
+
+function resolveCustomerCoords({ mapsUrl, latitude, longitude }) {
+  if (isValidCoords(latitude, longitude)) {
+    return {
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+    };
+  }
+
+  const parsed = parseMapsUrlCoords(mapsUrl);
+  if (parsed) {
+    return { latitude: parsed.lat, longitude: parsed.lng };
+  }
+
+  return { latitude: null, longitude: null };
+}
+
 function createDefaultOps() {
   return {
     adminPassword: "Admin@123456",
@@ -517,8 +574,12 @@ export const opsApi = {
     const cleanName = String(name || "").trim();
     const cleanPhone = String(phone || "").trim();
     const cleanAddress = String(address || "").trim();
-    const lat = Number(latitude);
-    const lng = Number(longitude);
+    const cleanMapsUrl = String(mapsUrl || "").trim();
+    const coords = resolveCustomerCoords({
+      mapsUrl: cleanMapsUrl,
+      latitude,
+      longitude,
+    });
 
     if (!cleanName) {
       return fail("أدخل اسم الزبون");
@@ -532,8 +593,10 @@ export const opsApi = {
       return fail("أدخل موقع الزبون بصيغة كتابة");
     }
 
-    if (!isValidCoords(lat, lng)) {
-      return fail("حدد موقع الزبون على الخريطة");
+    if (!coords.latitude && !cleanMapsUrl) {
+      return fail(
+        "ألصق رابط Google Maps أو حدّد نقطة على الخريطة لموقع الزبون"
+      );
     }
 
     const customer = {
@@ -541,15 +604,68 @@ export const opsApi = {
       name: cleanName,
       phone: cleanPhone,
       address: cleanAddress,
-      mapsUrl: String(mapsUrl || "").trim(),
-      latitude: lat,
-      longitude: lng,
+      mapsUrl: cleanMapsUrl,
+      latitude: coords.latitude,
+      longitude: coords.longitude,
       created_at: new Date().toISOString(),
     };
 
     store.customers.unshift(customer);
     await saveOps(store);
     return { ok: true, status: 201, data: { success: true, customer } };
+  },
+
+  async updateCustomer(
+    id,
+    { name, mapsUrl, latitude, longitude, phone, address }
+  ) {
+    const store = await syncOpsFromServer();
+    const customer = store.customers.find(
+      (item) => Number(item.id) === Number(id)
+    );
+
+    if (!customer) {
+      return fail("الزبون غير موجود", 404);
+    }
+
+    const cleanName = String(name || "").trim();
+    const cleanPhone = String(phone || "").trim();
+    const cleanAddress = String(address || "").trim();
+    const cleanMapsUrl = String(mapsUrl || "").trim();
+    const coords = resolveCustomerCoords({
+      mapsUrl: cleanMapsUrl,
+      latitude,
+      longitude,
+    });
+
+    if (!cleanName) {
+      return fail("أدخل اسم الزبون");
+    }
+
+    if (!cleanPhone) {
+      return fail("أدخل رقم الزبون");
+    }
+
+    if (!cleanAddress) {
+      return fail("أدخل موقع الزبون بصيغة كتابة");
+    }
+
+    if (!coords.latitude && !cleanMapsUrl) {
+      return fail(
+        "ألصق رابط Google Maps أو حدّد نقطة على الخريطة لموقع الزبون"
+      );
+    }
+
+    customer.name = cleanName;
+    customer.phone = cleanPhone;
+    customer.address = cleanAddress;
+    customer.mapsUrl = cleanMapsUrl;
+    customer.latitude = coords.latitude;
+    customer.longitude = coords.longitude;
+    customer.updated_at = new Date().toISOString();
+
+    await saveOps(store);
+    return ok({ message: "تم تحديث الزبون", customer });
   },
 
   async deleteCustomer(id) {
