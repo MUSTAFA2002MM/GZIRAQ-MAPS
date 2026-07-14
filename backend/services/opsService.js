@@ -44,6 +44,46 @@ function normalizeAdminProfile(profile) {
   };
 }
 
+/** Keep the freshest GPS point per agent — prevents stale PUT from wiping live tracks. */
+function mergeAgentLocations(current = [], incoming = []) {
+  const map = new Map();
+
+  for (const item of [...(current || []), ...(incoming || [])]) {
+    if (!item || item.agent_id == null) continue;
+    const id = Number(item.agent_id);
+    if (!Number.isFinite(id)) continue;
+
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+    const next = {
+      agent_id: id,
+      agent_name: String(item.agent_name || "مندوب"),
+      lat,
+      lng,
+      accuracy: Number.isFinite(Number(item.accuracy))
+        ? Number(item.accuracy)
+        : null,
+      updated_at: item.updated_at || new Date().toISOString(),
+    };
+
+    const prev = map.get(id);
+    const nextTime = next.updated_at ? new Date(next.updated_at).getTime() : 0;
+    const prevTime = prev?.updated_at ? new Date(prev.updated_at).getTime() : 0;
+
+    if (!prev || nextTime >= prevTime) {
+      map.set(id, next);
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+    const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+    return bTime - aTime;
+  });
+}
+
 function normalizeCompany(company) {
   const defaults = createDefaultOps().company;
   const source = company || {};
@@ -104,6 +144,7 @@ function writeStore(store) {
 module.exports = {
   createDefaultOps,
   normalizeAdminProfile,
+  mergeAgentLocations,
   readStore,
   writeStore,
 };

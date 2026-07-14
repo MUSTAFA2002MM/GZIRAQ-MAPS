@@ -137,11 +137,26 @@ export default function AdminOpsHomePage() {
     }
   };
 
+  const loadLiveLocations = async () => {
+    try {
+      const locationsResult = await opsApi.listAgentLocations({
+        maxAgeMinutes: 180,
+      });
+      setAgentLocations(locationsResult.data.locations || []);
+    } catch {
+      /* keep previous points */
+    }
+  };
+
   useEffect(() => {
     setMapReady(false);
     load();
-    const timer = setInterval(load, 10000);
-    return () => clearInterval(timer);
+    const heavy = setInterval(load, 12000);
+    const live = setInterval(loadLiveLocations, 3000);
+    return () => {
+      clearInterval(heavy);
+      clearInterval(live);
+    };
   }, [day]);
 
   const orderPoints = useMemo(

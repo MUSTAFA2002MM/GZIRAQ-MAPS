@@ -1118,20 +1118,12 @@ export const opsApi = {
   },
 
   async updateAgentLocation({ agentId, agentName, lat, lng, accuracy }) {
-    const store = await syncOpsFromServer();
     const nextLat = Number(lat);
     const nextLng = Number(lng);
 
     if (!agentId || !Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
       return fail("موقع المندوب غير صالح");
     }
-
-    const locations = Array.isArray(store.agentLocations)
-      ? [...store.agentLocations]
-      : [];
-    const index = locations.findIndex(
-      (item) => Number(item.agent_id) === Number(agentId)
-    );
 
     const entry = {
       agent_id: Number(agentId),
@@ -1142,25 +1134,96 @@ export const opsApi = {
       updated_at: new Date().toISOString(),
     };
 
-    if (index >= 0) {
-      locations[index] = entry;
-    } else {
-      locations.unshift(entry);
+    // Dedicated live endpoint — avoids full-store race wiping GPS.
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(`${API_URL}/api/ops/agent-location`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId: entry.agent_id,
+          agentName: entry.agent_name,
+          lat: entry.lat,
+          lng: entry.lng,
+          accuracy: entry.accuracy,
+        }),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      clearTimeout(timeout);
+
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        const local = readLocalOps();
+        const locations = Array.isArray(local.agentLocations)
+          ? [...local.agentLocations]
+          : [];
+        const index = locations.findIndex(
+          (item) => Number(item.agent_id) === Number(entry.agent_id)
+        );
+        const saved = data.location || entry;
+        if (index >= 0) locations[index] = saved;
+        else locations.unshift(saved);
+        writeLocalOps({ ...local, agentLocations: locations });
+        return ok({ location: saved });
+      }
+    } catch (error) {
+      console.warn("agent-location endpoint failed, falling back:", error);
     }
 
-    store.agentLocations = locations;
-    await saveOps(store);
-    return ok({ location: entry });
+    // Fallback: merge into full ops store
+    return withOpsLock(async () => {
+      const store = await syncOpsFromServer();
+      const locations = Array.isArray(store.agentLocations)
+        ? [...store.agentLocations]
+        : [];
+      const index = locations.findIndex(
+        (item) => Number(item.agent_id) === Number(agentId)
+      );
+
+      if (index >= 0) locations[index] = entry;
+      else locations.unshift(entry);
+
+      store.agentLocations = locations;
+      await saveOps(store);
+      return ok({ location: entry });
+    });
   },
 
   async listAgentLocations({ maxAgeMinutes = 120 } = {}) {
+    // Prefer lightweight endpoint so admin map polls without heavy sync races.
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(
+        `${API_URL}/api/ops/agent-locations?maxAgeMinutes=${encodeURIComponent(
+          maxAgeMinutes
+        )}&_=${Date.now()}`,
+        {
+          signal: controller.signal,
+          cache: "no-store",
+        }
+      );
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        const data = await response.json();
+        return ok({ locations: data.locations || [] });
+      }
+    } catch (error) {
+      console.warn("agent-locations endpoint failed, falling back:", error);
+    }
+
     const store = await syncOpsFromServer();
     const maxAgeMs = Math.max(1, Number(maxAgeMinutes) || 120) * 60 * 1000;
     const now = Date.now();
 
     const locations = (store.agentLocations || [])
       .filter((item) => {
-        const updated = item.updated_at ? new Date(item.updated_at).getTime() : 0;
+        const updated = item.updated_at
+          ? new Date(item.updated_at).getTime()
+          : 0;
         return Number.isFinite(updated) && now - updated <= maxAgeMs;
       })
       .sort((a, b) => {

@@ -128,7 +128,7 @@ export default function DeliveryMapPage() {
     geoMessage,
     insecure,
     refreshLocation,
-  } = useDeviceLocation({ auto: true, intervalMs: 5000 });
+  } = useDeviceLocation({ auto: true, intervalMs: 3000 });
 
   const loadOrders = async () => {
     const result = await opsApi.listOrders({ day, agentId: user?.id });
@@ -154,6 +154,36 @@ export default function DeliveryMapPage() {
     loadOrders();
     loadAttendance();
   }, [day, user?.id]);
+
+  // Push GPS immediately whenever the device location changes.
+  useEffect(() => {
+    if (!user?.id || !location) return undefined;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        await opsApi.updateAgentLocation({
+          agentId: user.id,
+          agentName: user.name,
+          lat: location.lat,
+          lng: location.lng,
+          accuracy: location.accuracy,
+        });
+        setTrack((current) => [
+          ...current.slice(-80),
+          [location.lat, location.lng],
+        ]);
+      } catch {
+        /* ignore transient GPS push errors */
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [location?.lat, location?.lng, location?.accuracy, user?.id, user?.name]);
 
   useEffect(() => {
     if (!user?.id) return undefined;
@@ -211,7 +241,7 @@ export default function DeliveryMapPage() {
     };
 
     syncCycle();
-    const timer = setInterval(syncCycle, 5000);
+    const timer = setInterval(syncCycle, 4000);
 
     return () => {
       cancelled = true;

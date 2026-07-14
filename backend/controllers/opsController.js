@@ -3,6 +3,7 @@ const {
   writeStore,
   createDefaultOps,
   normalizeAdminProfile,
+  mergeAgentLocations,
 } = require("../services/opsService");
 
 function publicStore(store) {
@@ -51,9 +52,11 @@ function putOps(req, res) {
     customers: Array.isArray(incoming.customers) ? incoming.customers : [],
     orders: Array.isArray(incoming.orders) ? incoming.orders : [],
     attendance: Array.isArray(incoming.attendance) ? incoming.attendance : [],
-    agentLocations: Array.isArray(incoming.agentLocations)
-      ? incoming.agentLocations
-      : current.agentLocations || [],
+    // Merge GPS tracks so a stale full-store PUT never wipes a fresher point.
+    agentLocations: mergeAgentLocations(
+      current.agentLocations || [],
+      Array.isArray(incoming.agentLocations) ? incoming.agentLocations : []
+    ),
     nextIds: {
       ...defaults.nextIds,
       ...(incoming.nextIds || {}),
@@ -65,6 +68,72 @@ function putOps(req, res) {
   return res.json({
     success: true,
     store: publicStore(readStore()),
+  });
+}
+
+function listAgentLocations(req, res) {
+  const maxAgeMinutes = Math.max(
+    1,
+    Number(req.query.maxAgeMinutes) || 180
+  );
+  const maxAgeMs = maxAgeMinutes * 60 * 1000;
+  const now = Date.now();
+  const store = readStore();
+
+  const locations = mergeAgentLocations(store.agentLocations || [], []).filter(
+    (item) => {
+      const updated = item.updated_at ? new Date(item.updated_at).getTime() : 0;
+      return Number.isFinite(updated) && now - updated <= maxAgeMs;
+    }
+  );
+
+  return res.json({
+    success: true,
+    locations,
+    serverTime: new Date().toISOString(),
+  });
+}
+
+function updateAgentLocation(req, res) {
+  const agentId = Number(req.body?.agentId);
+  const lat = Number(req.body?.lat);
+  const lng = Number(req.body?.lng);
+  const accuracy = Number(req.body?.accuracy);
+  const agentName = String(req.body?.agentName || "مندوب").trim() || "مندوب";
+
+  if (!Number.isFinite(agentId) || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({
+      success: false,
+      message: "موقع المندوب غير صالح",
+    });
+  }
+
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) {
+    return res.status(400).json({
+      success: false,
+      message: "إحداثيات المندوب غير صالحة",
+    });
+  }
+
+  const store = readStore();
+  const entry = {
+    agent_id: agentId,
+    agent_name: agentName,
+    lat,
+    lng,
+    accuracy: Number.isFinite(accuracy) ? accuracy : null,
+    updated_at: new Date().toISOString(),
+  };
+
+  store.agentLocations = mergeAgentLocations(store.agentLocations || [], [
+    entry,
+  ]);
+  store.updatedAt = Date.now();
+  writeStore(store);
+
+  return res.json({
+    success: true,
+    location: entry,
   });
 }
 
@@ -127,6 +196,8 @@ function changeAdminPassword(req, res) {
 module.exports = {
   getOps,
   putOps,
+  listAgentLocations,
+  updateAgentLocation,
   adminLogin,
   changeAdminPassword,
 };
