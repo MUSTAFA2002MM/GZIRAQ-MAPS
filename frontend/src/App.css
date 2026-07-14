@@ -1095,6 +1095,67 @@
   color: #128048;
 }
 
+.attendance-calendar-bar {
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.attendance-mode-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.attendance-mode-tabs button {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.attendance-mode-tabs button.is-active {
+  background: rgba(21, 88, 224, 0.12);
+  border-color: rgba(21, 88, 224, 0.45);
+  color: var(--primary);
+}
+
+.attendance-calendar-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 280px));
+  gap: 12px;
+}
+
+.attendance-calendar-fields .input-group {
+  margin-bottom: 0;
+}
+
+.attendance-calendar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.attendance-calendar-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .attendance-calendar-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .chip-row:hover {
   transform: translateX(-2px);
 }
