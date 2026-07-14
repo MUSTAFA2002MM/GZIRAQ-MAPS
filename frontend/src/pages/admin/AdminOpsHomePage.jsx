@@ -110,6 +110,24 @@ function formatUpdatedAt(value) {
   }
 }
 
+function connectionLabel(updatedAt) {
+  if (!updatedAt) return { text: "غير متصل", online: false };
+  const ageMs = Date.now() - new Date(updatedAt).getTime();
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
+    return { text: "غير متصل", online: false };
+  }
+  if (ageMs <= 2 * 60 * 1000) {
+    return { text: "متصل الآن", online: true };
+  }
+  if (ageMs <= 5 * 60 * 1000) {
+    return { text: "متصل حديثًا", online: true };
+  }
+  if (ageMs <= 30 * 60 * 1000) {
+    return { text: "ظهر مؤخرًا", online: false };
+  }
+  return { text: "غير متصل", online: false };
+}
+
 export default function AdminOpsHomePage() {
   const [day, setDay] = useState("today");
   const [orders, setOrders] = useState([]);
@@ -191,6 +209,27 @@ export default function AdminOpsHomePage() {
   const hasMarkers =
     orderPoints.length > 0 || agentPoints.length > 0 || Boolean(companyPoint);
 
+  const connectedAgents = useMemo(() => {
+    const now = Date.now();
+    return [...agentLocations]
+      .map((item) => {
+        const updated = item.updated_at
+          ? new Date(item.updated_at).getTime()
+          : 0;
+        const ageMs = Number.isFinite(updated) ? now - updated : Infinity;
+        const status = connectionLabel(item.updated_at);
+        return {
+          ...item,
+          ageMs,
+          status,
+        };
+      })
+      .filter((item) => item.ageMs <= 30 * 60 * 1000)
+      .sort((a, b) => a.ageMs - b.ageMs);
+  }, [agentLocations]);
+
+  const onlineNow = connectedAgents.filter((item) => item.status.online);
+
   return (
     <section className="panel">
       <header className="panel-header">
@@ -224,7 +263,7 @@ export default function AdminOpsHomePage() {
           </article>
           <article className="stat-card">
             <span>متصلون الآن</span>
-            <strong>{stats.live_agents ?? agentLocations.length}</strong>
+            <strong>{onlineNow.length}</strong>
           </article>
           <article className="stat-card">
             <span>الموظفون</span>
@@ -244,6 +283,63 @@ export default function AdminOpsHomePage() {
           </article>
         </div>
       )}
+
+      <div className="connected-people-panel">
+        <div className="connected-people-head">
+          <h3>الأشخاص المتصلون الآن</h3>
+          <span>
+            {onlineNow.length > 0
+              ? `${onlineNow.length} مندوب نشط خلال آخر 5 دقائق`
+              : "لا يوجد مندوب متصل حاليًا"}
+          </span>
+        </div>
+
+        {onlineNow.length > 0 ? (
+          <div className="connected-people-list">
+            {onlineNow.map((agent) => (
+              <div key={`online-${agent.agent_id}`} className="connected-person">
+                <span className="connected-dot online" />
+                <div>
+                  <strong>{agent.agent_name}</strong>
+                  <p>
+                    {agent.status.text} · آخر تحديث{" "}
+                    {formatUpdatedAt(agent.updated_at)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-hint" style={{ margin: 0 }}>
+            يظهر هنا اسم المندوب عندما تكون لوحته مفتوحة وGPS يعمل.
+          </p>
+        )}
+
+        {connectedAgents.some((item) => !item.status.online) ? (
+          <div className="connected-people-recent">
+            <h4>ظهروا مؤخرًا (خلال 30 دقيقة)</h4>
+            <div className="connected-people-list">
+              {connectedAgents
+                .filter((item) => !item.status.online)
+                .map((agent) => (
+                  <div
+                    key={`recent-${agent.agent_id}`}
+                    className="connected-person muted"
+                  >
+                    <span className="connected-dot" />
+                    <div>
+                      <strong>{agent.agent_name}</strong>
+                      <p>
+                        {agent.status.text} · آخر تحديث{" "}
+                        {formatUpdatedAt(agent.updated_at)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <div className="legend-row">
         {Object.values(ORDER_STATUS).map((item) => (
@@ -358,6 +454,7 @@ export default function AdminOpsHomePage() {
           <thead>
             <tr>
               <th>المندوب</th>
+              <th>الحالة</th>
               <th>Latitude</th>
               <th>Longitude</th>
               <th>آخر تحديث</th>
@@ -366,20 +463,32 @@ export default function AdminOpsHomePage() {
           <tbody>
             {agentLocations.length === 0 ? (
               <tr>
-                <td colSpan={4} className="empty-hint">
+                <td colSpan={5} className="empty-hint">
                   لا يوجد مندوب متصل بالموقع حاليًا. عندما يفتح المندوب لوحته مع GPS
                   يظهر هنا.
                 </td>
               </tr>
             ) : (
-              agentLocations.map((agent) => (
-                <tr key={agent.agent_id}>
-                  <td>{agent.agent_name}</td>
-                  <td dir="ltr">{Number(agent.lat).toFixed(6)}</td>
-                  <td dir="ltr">{Number(agent.lng).toFixed(6)}</td>
-                  <td dir="ltr">{formatUpdatedAt(agent.updated_at)}</td>
-                </tr>
-              ))
+              agentLocations.map((agent) => {
+                const status = connectionLabel(agent.updated_at);
+                return (
+                  <tr key={agent.agent_id}>
+                    <td>{agent.agent_name}</td>
+                    <td>
+                      <span
+                        className={`online-pill ${
+                          status.online ? "is-online" : ""
+                        }`}
+                      >
+                        {status.text}
+                      </span>
+                    </td>
+                    <td dir="ltr">{Number(agent.lat).toFixed(6)}</td>
+                    <td dir="ltr">{Number(agent.lng).toFixed(6)}</td>
+                    <td dir="ltr">{formatUpdatedAt(agent.updated_at)}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

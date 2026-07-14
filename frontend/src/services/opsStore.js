@@ -1239,10 +1239,37 @@ export const opsApi = {
     const store = await syncOpsFromServer();
     const day = todayKey();
     const todayOrders = store.orders.filter((order) => order.day === day);
-    const liveAgents = (store.agentLocations || []).filter((item) => {
-      const updated = item.updated_at ? new Date(item.updated_at).getTime() : 0;
-      return Number.isFinite(updated) && Date.now() - updated <= 30 * 60 * 1000;
-    }).length;
+    const now = Date.now();
+    const onlineMs = 5 * 60 * 1000;
+    const liveMs = 30 * 60 * 1000;
+
+    const liveEntries = (store.agentLocations || [])
+      .filter((item) => {
+        const updated = item.updated_at
+          ? new Date(item.updated_at).getTime()
+          : 0;
+        return Number.isFinite(updated) && now - updated <= liveMs;
+      })
+      .map((item) => {
+        const updated = item.updated_at
+          ? new Date(item.updated_at).getTime()
+          : 0;
+        return {
+          agent_id: item.agent_id,
+          agent_name: item.agent_name,
+          lat: item.lat,
+          lng: item.lng,
+          updated_at: item.updated_at,
+          online: now - updated <= onlineMs,
+        };
+      })
+      .sort((a, b) => {
+        const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        return bTime - aTime;
+      });
+
+    const onlineAgents = liveEntries.filter((item) => item.online);
 
     return ok({
       stats: {
@@ -1254,7 +1281,10 @@ export const opsApi = {
           .length,
         returned_today: todayOrders.filter((o) => o.status === "returned")
           .length,
-        live_agents: liveAgents,
+        live_agents: liveEntries.length,
+        online_agents: onlineAgents.length,
+        online_names: onlineAgents.map((item) => item.agent_name),
+        connected_agents: liveEntries,
       },
     });
   },
