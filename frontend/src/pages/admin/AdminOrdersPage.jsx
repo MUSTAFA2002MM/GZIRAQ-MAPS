@@ -1,18 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ORDER_STATUS, opsApi } from "../../services/opsStore";
+
+const emptyForm = {
+  agentId: "",
+  customerId: "",
+  customerName: "",
+  amount: "",
+  paid: "",
+  remaining: "",
+  priority: "1",
+};
 
 export default function AdminOrdersPage() {
   const [day, setDay] = useState("today");
   const [agents, setAgents] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [form, setForm] = useState({
-    agentId: "",
-    customerId: "",
-    customerName: "",
-    amount: "",
-    priority: "1",
-  });
+  const [form, setForm] = useState(emptyForm);
+  const [customerQuery, setCustomerQuery] = useState("");
   const [message, setMessage] = useState("");
 
   const load = async () => {
@@ -30,27 +35,115 @@ export default function AdminOrdersPage() {
     load();
   }, [day]);
 
+  const filteredCustomers = useMemo(() => {
+    const query = customerQuery.trim().toLowerCase();
+    if (!query) return customers;
+
+    return customers.filter((customer) => {
+      const haystack = [
+        customer.name,
+        customer.phone,
+        customer.address,
+        customer.mapsUrl,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [customers, customerQuery]);
+
+  const selectedCustomer = useMemo(
+    () =>
+      customers.find((item) => Number(item.id) === Number(form.customerId)) ||
+      null,
+    [customers, form.customerId]
+  );
+
+  const syncMoney = (nextAmount, nextPaid, nextRemaining, changed) => {
+    const amount = Number(nextAmount);
+    const paid = Number(nextPaid);
+    const remaining = Number(nextRemaining);
+    const safeAmount = Number.isFinite(amount) ? amount : 0;
+
+    if (changed === "amount" || changed === "paid") {
+      const safePaid = Number.isFinite(paid) ? paid : 0;
+      return {
+        amount: nextAmount,
+        paid: nextPaid,
+        remaining: String(Math.max(0, safeAmount - safePaid)),
+      };
+    }
+
+    if (changed === "remaining") {
+      const safeRemaining = Number.isFinite(remaining) ? remaining : 0;
+      return {
+        amount: nextAmount,
+        paid: String(Math.max(0, safeAmount - safeRemaining)),
+        remaining: nextRemaining,
+      };
+    }
+
+    return {
+      amount: nextAmount,
+      paid: nextPaid,
+      remaining: nextRemaining,
+    };
+  };
+
   const onChange = (event) => {
     const { name, value } = event.target;
+
+    if (name === "amount" || name === "paid" || name === "remaining") {
+      setForm((current) => ({
+        ...current,
+        ...syncMoney(
+          name === "amount" ? value : current.amount,
+          name === "paid" ? value : current.paid,
+          name === "remaining" ? value : current.remaining,
+          name
+        ),
+      }));
+      return;
+    }
+
     setForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const pickCustomer = (customer) => {
+    setForm((current) => ({
+      ...current,
+      customerId: String(customer.id),
+      customerName: customer.name,
+    }));
+    setCustomerQuery(
+      `${customer.name}${customer.phone ? ` · ${customer.phone}` : ""}`
+    );
+  };
+
+  const clearCustomer = () => {
+    setForm((current) => ({
+      ...current,
+      customerId: "",
+      customerName: "",
+    }));
+    setCustomerQuery("");
   };
 
   const onSubmit = async (event) => {
     event.preventDefault();
-    const result = await opsApi.createOrder(form);
+    const result = await opsApi.createOrder({
+      ...form,
+      customerName: form.customerName || selectedCustomer?.name || customerQuery,
+    });
 
     if (!result.ok) {
       setMessage(result.data.message);
       return;
     }
 
-    setForm({
-      agentId: "",
-      customerId: "",
-      customerName: "",
-      amount: "",
-      priority: "1",
-    });
+    setForm(emptyForm);
+    setCustomerQuery("");
     setMessage("تم تسجيل الطلب على المندوب");
     await load();
   };
@@ -94,23 +187,68 @@ export default function AdminOrdersPage() {
             </select>
           </label>
 
-          <label className="input-group">
+          <div className="input-group customer-search-field">
             <span>الزبون</span>
-            <select
-              name="customerId"
-              value={form.customerId}
-              onChange={onChange}
-            >
-              <option value="">-- اختر زبون --</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                  {customer.phone ? ` · ${customer.phone}` : ""}
-                  {customer.address ? ` · ${customer.address}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+            <div className="customer-search-row">
+              <input
+                type="search"
+                value={customerQuery}
+                onChange={(event) => {
+                  setCustomerQuery(event.target.value);
+                  if (form.customerId) {
+                    setForm((current) => ({
+                      ...current,
+                      customerId: "",
+                      customerName: "",
+                    }));
+                  }
+                }}
+                placeholder="ابحث بالاسم أو الرقم أو الموقع..."
+                autoComplete="off"
+              />
+              {form.customerId ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={clearCustomer}
+                >
+                  مسح
+                </button>
+              ) : null}
+            </div>
+
+            {selectedCustomer ? (
+              <p className="customer-search-picked">
+                المختار: <strong>{selectedCustomer.name}</strong>
+                {selectedCustomer.phone ? ` · ${selectedCustomer.phone}` : ""}
+                {selectedCustomer.address
+                  ? ` · ${selectedCustomer.address}`
+                  : ""}
+              </p>
+            ) : (
+              <div className="customer-search-results">
+                {filteredCustomers.length === 0 ? (
+                  <p className="empty-hint">لا يوجد زبون مطابق للبحث</p>
+                ) : (
+                  filteredCustomers.slice(0, 8).map((customer) => (
+                    <button
+                      key={customer.id}
+                      type="button"
+                      className="customer-search-item"
+                      onClick={() => pickCustomer(customer)}
+                    >
+                      <strong>{customer.name}</strong>
+                      <span>
+                        {[customer.phone, customer.address]
+                          .filter(Boolean)
+                          .join(" · ") || "بدون تفاصيل"}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
 
           <label className="input-group">
             <span>مبلغ الفاتورة</span>
@@ -118,7 +256,33 @@ export default function AdminOrdersPage() {
               name="amount"
               value={form.amount}
               onChange={onChange}
+              inputMode="decimal"
               dir="ltr"
+              placeholder="0"
+            />
+          </label>
+
+          <label className="input-group">
+            <span>الواصل</span>
+            <input
+              name="paid"
+              value={form.paid}
+              onChange={onChange}
+              inputMode="decimal"
+              dir="ltr"
+              placeholder="0"
+            />
+          </label>
+
+          <label className="input-group">
+            <span>الباقي</span>
+            <input
+              name="remaining"
+              value={form.remaining}
+              onChange={onChange}
+              inputMode="decimal"
+              dir="ltr"
+              placeholder="0"
             />
           </label>
 
@@ -145,35 +309,64 @@ export default function AdminOrdersPage() {
               <th>المندوب</th>
               <th>الحالة</th>
               <th>المبلغ</th>
+              <th>الواصل</th>
+              <th>الباقي</th>
               <th>الأولوية</th>
               <th>تحصيل</th>
             </tr>
           </thead>
           <tbody>
-            {orders.map((order) => (
-              <tr key={order.id}>
-                <td>{order.customer_name}</td>
-                <td>{order.agent_name}</td>
-                <td>{ORDER_STATUS[order.status]?.label || order.status}</td>
-                <td>{order.amount}</td>
-                <td>{order.priority || "-"}</td>
-                <td>
-                  {order.status === "delivered" && !order.collected ? (
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => collect(order.id)}
-                    >
-                      استلام المبلغ
-                    </button>
-                  ) : order.collected ? (
-                    "تم الاستلام"
-                  ) : (
-                    "—"
-                  )}
+            {orders.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="empty-hint">
+                  لا توجد طلبات لهذا اليوم
                 </td>
               </tr>
-            ))}
+            ) : (
+              orders.map((order) => {
+                const amount = Number(order.amount) || 0;
+                const paid = Number(
+                  order.paid ?? order.paid_amount ?? 0
+                );
+                const remaining = Number.isFinite(Number(order.remaining))
+                  ? Number(order.remaining)
+                  : Number.isFinite(Number(order.remaining_amount))
+                    ? Number(order.remaining_amount)
+                    : Math.max(0, amount - (Number.isFinite(paid) ? paid : 0));
+
+                return (
+                  <tr key={order.id}>
+                    <td>
+                      <div>{order.customer_name}</div>
+                      {order.customer_phone ? (
+                        <small dir="ltr">{order.customer_phone}</small>
+                      ) : null}
+                    </td>
+                    <td>{order.agent_name}</td>
+                    <td>{ORDER_STATUS[order.status]?.label || order.status}</td>
+                    <td dir="ltr">{amount}</td>
+                    <td dir="ltr">{Number.isFinite(paid) ? paid : 0}</td>
+                    <td dir="ltr">{remaining}</td>
+                    <td>{order.priority || "-"}</td>
+                    <td>
+                      {order.status === "delivered" && !order.collected ? (
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => collect(order.id)}
+                        >
+                          استلام المبلغ
+                        </button>
+                      ) : order.collected ? (
+                        "تم الاستلام"
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

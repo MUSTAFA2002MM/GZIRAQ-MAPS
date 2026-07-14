@@ -477,6 +477,15 @@ export default function DeliveryMapPage() {
               <strong>{order.customer_name}</strong>
               <p>
                 {ORDER_STATUS[order.status]?.label} · المبلغ: {order.amount}
+                {order.paid != null
+                  ? ` · الواصل: ${order.paid}`
+                  : ""}
+                {order.remaining != null
+                  ? ` · الباقي: ${order.remaining}`
+                  : Number.isFinite(Number(order.amount)) &&
+                      Number.isFinite(Number(order.paid))
+                    ? ` · الباقي: ${Math.max(0, Number(order.amount) - Number(order.paid))}`
+                    : ""}
                 {order.distanceMeters !== null
                   ? ` · المسافة: ${order.distanceMeters}م`
                   : " · بانتظار GPS"}

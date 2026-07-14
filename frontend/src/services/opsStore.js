@@ -603,7 +603,15 @@ export const opsApi = {
     return ok({ orders, day: key });
   },
 
-  async createOrder({ agentId, customerId, customerName, amount, priority }) {
+  async createOrder({
+    agentId,
+    customerId,
+    customerName,
+    amount,
+    paid,
+    remaining,
+    priority,
+  }) {
     const store = await syncOpsFromServer();
     const agent = store.agents.find(
       (item) => Number(item.id) === Number(agentId)
@@ -621,9 +629,21 @@ export const opsApi = {
       return fail("اختر أو اكتب اسم الزبون");
     }
 
+    if (!customer?.id && !String(customerId || "").trim()) {
+      return fail("اختر الزبون من نتائج البحث");
+    }
+
     const lat = Number(customer?.latitude);
     const lng = Number(customer?.longitude);
     const hasCoords = isValidCoords(lat, lng);
+
+    const total = Number(amount) || 0;
+    const paidValue = Number(paid);
+    const remainingValue = Number(remaining);
+    const paidAmount = Number.isFinite(paidValue) ? paidValue : 0;
+    const remainingAmount = Number.isFinite(remainingValue)
+      ? remainingValue
+      : Math.max(0, total - paidAmount);
 
     const order = {
       id: store.nextIds.order++,
@@ -636,7 +656,9 @@ export const opsApi = {
       customer_maps_url: customer?.mapsUrl || "",
       latitude: hasCoords ? lat : null,
       longitude: hasCoords ? lng : null,
-      amount: Number(amount) || 0,
+      amount: total,
+      paid: paidAmount,
+      remaining: remainingAmount,
       priority: Number(priority) || 0,
       status: "registered",
       collected: false,
