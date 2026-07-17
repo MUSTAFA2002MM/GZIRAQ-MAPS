@@ -39,6 +39,22 @@ export function AuthProvider({ children }) {
   const loginByPin = async ({ role, id, pin, location }) => {
     const result = await opsApi.loginByPin({ role, id, pin, location });
     if (!result.ok) return result;
+
+    // Start live sharing immediately for delivery agents on successful login.
+    if (role === "delivery" && location) {
+      try {
+        await opsApi.updateAgentLocation({
+          agentId: result.data.user.id,
+          agentName: result.data.user.name,
+          lat: location.lat,
+          lng: location.lng,
+          accuracy: location.accuracy,
+        });
+      } catch {
+        /* login still proceeds; delivery panel will keep retrying */
+      }
+    }
+
     return applySession(result.data.token, result.data.user);
   };
 

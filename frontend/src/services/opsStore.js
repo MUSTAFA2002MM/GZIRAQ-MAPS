@@ -585,23 +585,38 @@ export const opsApi = {
       return fail("الحساب غير مفعّل", 403);
     }
 
+    const lat = Number(location?.lat);
+    const lng = Number(location?.lng);
+    const hasLocation = Number.isFinite(lat) && Number.isFinite(lng);
+
+    // Delivery agents must always share live GPS to log in.
+    if (role === "delivery" && !hasLocation) {
+      return fail(
+        "مشاركة الموقع المباشر إجبارية لدخول المندوب. فعّل GPS واسمح بإذن الموقع",
+        403
+      );
+    }
+
+    // Employees need GPS when company geofence is enabled.
+    if (
+      role === "employee" &&
+      store.company.requireGeofence !== false &&
+      !hasLocation
+    ) {
+      return fail(
+        "فعّل GPS وابقَ داخل نطاق موقع الشركة لتسجيل الدخول",
+        403
+      );
+    }
+
     // Agents and employees must be inside company geofence to log in
     // (unless the admin disabled geographic check).
     if (
       (role === "delivery" || role === "employee") &&
-      store.company.requireGeofence !== false
+      store.company.requireGeofence !== false &&
+      hasLocation
     ) {
       const company = store.company;
-      const lat = Number(location?.lat);
-      const lng = Number(location?.lng);
-
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        return fail(
-          "فعّل GPS وابقَ داخل نطاق موقع الشركة لتسجيل الدخول",
-          403
-        );
-      }
-
       const meters = distanceMeters(
         { lat, lng },
         { lat: company.lat, lng: company.lng }
@@ -629,6 +644,13 @@ export const opsApi = {
         is_active: true,
         pin: person.pin,
       },
+      location: hasLocation
+        ? {
+            lat,
+            lng,
+            accuracy: Number(location?.accuracy) || null,
+          }
+        : null,
     });
   },
 

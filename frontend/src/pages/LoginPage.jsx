@@ -151,8 +151,8 @@ export default function LoginPage() {
 
   const geofenceHint =
     company?.requireGeofence === false
-      ? "التحقق من نطاق الشركة متوقف من لوحة المدير"
-      : `الدخول فقط داخل نطاق الشركة (≈ ${company?.radiusMeters || 100}م من موقع الشركة)`;
+      ? "المندوب: مشاركة الموقع المباشر إجبارية · تحقق نطاق الشركة متوقف"
+      : `المندوب: مشاركة الموقع المباشر إجبارية · الدخول داخل نطاق الشركة (≈ ${company?.radiusMeters || 100}م)`;
 
   return (
     <main className="portal-page" dir="rtl">
@@ -194,7 +194,10 @@ export default function LoginPage() {
 
         <form className="portal-card" onSubmit={onAgentLogin}>
           <h2>دخول المندوب</h2>
-          <p>مشاركة الموقع + طلبات التوصيل · يلزم GPS داخل نطاق الشركة</p>
+          <p>
+            مشاركة الموقع المباشر إجبارية · لن يتم الدخول بدون تفعيل GPS والسماح
+            بإذن الموقع
+          </p>
           <label className="input-group">
             <span>اختر اسمك من القائمة</span>
             <select

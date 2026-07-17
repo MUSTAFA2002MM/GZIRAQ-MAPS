@@ -130,6 +130,10 @@ export default function DeliveryMapPage() {
     refreshLocation,
   } = useDeviceLocation({ auto: true, intervalMs: 3000 });
 
+  const locationReady = geoStatus === "ready" && Boolean(location);
+  const [sharingOk, setSharingOk] = useState(false);
+  const liveSharingActive = locationReady && sharingOk;
+
   const loadOrders = async () => {
     const result = await opsApi.listOrders({ day, agentId: user?.id });
     setOrders(result.data.orders || []);
@@ -157,25 +161,31 @@ export default function DeliveryMapPage() {
 
   // Push GPS immediately whenever the device location changes.
   useEffect(() => {
-    if (!user?.id || !location) return undefined;
+    if (!user?.id || !location) {
+      setSharingOk(false);
+      return undefined;
+    }
 
     let cancelled = false;
     const timer = setTimeout(async () => {
       if (cancelled) return;
       try {
-        await opsApi.updateAgentLocation({
+        const result = await opsApi.updateAgentLocation({
           agentId: user.id,
           agentName: user.name,
           lat: location.lat,
           lng: location.lng,
           accuracy: location.accuracy,
         });
-        setTrack((current) => [
-          ...current.slice(-80),
-          [location.lat, location.lng],
-        ]);
+        if (!cancelled) {
+          setSharingOk(Boolean(result?.ok));
+          setTrack((current) => [
+            ...current.slice(-80),
+            [location.lat, location.lng],
+          ]);
+        }
       } catch {
-        /* ignore transient GPS push errors */
+        if (!cancelled) setSharingOk(false);
       }
     }, 400);
 
@@ -271,7 +281,9 @@ export default function DeliveryMapPage() {
             })
           : null;
       const canComplete =
-        meters !== null && meters <= DELIVERY_RADIUS_METERS;
+        liveSharingActive &&
+        meters !== null &&
+        meters <= DELIVERY_RADIUS_METERS;
 
       return {
         ...order,
@@ -279,7 +291,7 @@ export default function DeliveryMapPage() {
         canComplete,
       };
     });
-  }, [orders, location]);
+  }, [orders, location, liveSharingActive]);
 
   const updateStatus = async (order, status) => {
     setMessage("");
@@ -324,19 +336,25 @@ export default function DeliveryMapPage() {
     setMessage("");
 
     try {
-      let current = location;
-      let bypassGeo = geoStatus !== "ready";
+      if (!locationReady) {
+        setMessageType("error");
+        setMessage(
+          "مشاركة الموقع المباشر إجبارية. فعّل GPS واسمح بإذن الموقع أولًا"
+        );
+        return;
+      }
 
-      if (geoStatus === "ready") {
-        try {
-          current = await refreshLocation();
-        } catch {
-          current = location;
-        }
+      let current = location;
+      try {
+        current = await refreshLocation();
+      } catch {
+        current = location;
       }
 
       if (!current) {
-        bypassGeo = true;
+        setMessageType("error");
+        setMessage("تعذر قراءة الموقع. أعد تفعيل GPS ثم حاول مجددًا");
+        return;
       }
 
       const result = await opsApi.clock({
@@ -345,7 +363,7 @@ export default function DeliveryMapPage() {
         personName: user.name,
         action,
         location: current,
-        bypassGeo,
+        bypassGeo: false,
       });
 
       setMessageType(result.ok ? "success" : "error");
@@ -356,13 +374,34 @@ export default function DeliveryMapPage() {
     }
   };
 
+  const forceEnableLocation = async () => {
+    setMessage("");
+    try {
+      const point = await refreshLocation();
+      const result = await opsApi.updateAgentLocation({
+        agentId: user.id,
+        agentName: user.name,
+        lat: point.lat,
+        lng: point.lng,
+        accuracy: point.accuracy,
+      });
+      setSharingOk(Boolean(result?.ok));
+      setMessageType("success");
+      setMessage("تم تفعيل مشاركة الموقع المباشر");
+    } catch (error) {
+      setSharingOk(false);
+      setMessageType("error");
+      setMessage(error.message || "تعذر تفعيل مشاركة الموقع");
+    }
+  };
+
   return (
     <section className="panel">
       <header className="panel-header">
         <div>
           <h2>لوحة المندوب</h2>
           <p>
-            التتبع المباشر يعمل تلقائيًا · التسليم فقط عند الوصول للزبون (≤{" "}
+            مشاركة الموقع المباشر إجبارية · التسليم فقط عند الوصول للزبون (≤{" "}
             {DELIVERY_RADIUS_METERS}م)
           </p>
         </div>
@@ -374,21 +413,39 @@ export default function DeliveryMapPage() {
 
       {message && <div className={`message ${messageType}`}>{message}</div>}
 
+      {!liveSharingActive && (
+        <div className="location-required-gate">
+          <strong>مشاركة الموقع المباشر إجبارية</strong>
+          <p>
+            {insecure
+              ? "افتح الموقع عبر HTTPS واسمح بإذن الموقع ليظهر المندوب على خريطة المدير."
+              : geoMessage ||
+                "فعّل GPS واسمح بإذن الموقع للمتصفح حتى تتمكن من استخدام لوحة المندوب."}
+          </p>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={forceEnableLocation}
+          >
+            تفعيل مشاركة الموقع الآن
+          </button>
+        </div>
+      )}
+
       <div className="attendance-box">
         <strong>
           الحضور (نطاق الشركة {company?.radiusMeters ?? 100}م)
         </strong>
         <p className="empty-hint" style={{ marginTop: 8 }}>
-          {geoMessage}
-          {insecure
-            ? " · افتح https://129.121.93.45 بعد تفعيل HTTPS حتى يعمل التتبع التلقائي"
-            : ""}
+          {liveSharingActive
+            ? `مشاركة الموقع تعمل · ${geoMessage}`
+            : "بانتظار تفعيل مشاركة الموقع المباشر"}
         </p>
         <div className="form-buttons" style={{ marginTop: 10 }}>
           <button
             className="primary-button"
             type="button"
-            disabled={busy}
+            disabled={busy || !liveSharingActive}
             onClick={() => clock("in")}
           >
             تسجيل دخول
@@ -396,7 +453,7 @@ export default function DeliveryMapPage() {
           <button
             className="secondary-button"
             type="button"
-            disabled={busy}
+            disabled={busy || !liveSharingActive}
             onClick={() => clock("out")}
           >
             تسجيل خروج
@@ -404,17 +461,7 @@ export default function DeliveryMapPage() {
           <button
             className="secondary-button"
             type="button"
-            onClick={() =>
-              refreshLocation()
-                .then(() => {
-                  setMessageType("success");
-                  setMessage("تم تحديث موقع التتبع");
-                })
-                .catch((error) => {
-                  setMessageType("error");
-                  setMessage(error.message || "تعذر تحديث الموقع");
-                })
-            }
+            onClick={forceEnableLocation}
           >
             تحديث موقعي للتتبع
           </button>
@@ -430,6 +477,12 @@ export default function DeliveryMapPage() {
               : ""}
         </p>
       </div>
+
+      <div
+        className={`delivery-workspace ${
+          liveSharingActive ? "" : "is-locked"
+        }`}
+      >
 
       <div className="dashboard-map" style={{ marginBottom: 16 }}>
         <MapContainer center={[33.3152, 44.3661]} zoom={12} className="map-canvas">
@@ -548,6 +601,7 @@ export default function DeliveryMapPage() {
             )}
           </div>
         ))}
+      </div>
       </div>
     </section>
   );
