@@ -17,8 +17,10 @@ export default function AdminOrdersPage() {
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("success");
 
   const load = async () => {
     const [agentsResult, customersResult, ordersResult] = await Promise.all([
@@ -130,46 +132,136 @@ export default function AdminOrdersPage() {
     setCustomerQuery("");
   };
 
-  const onSubmit = async (event) => {
-    event.preventDefault();
-    const result = await opsApi.createOrder({
-      ...form,
-      customerName: form.customerName || selectedCustomer?.name || customerQuery,
-    });
+  const resetForm = () => {
+    setForm(emptyForm);
+    setCustomerQuery("");
+    setEditingId(null);
+  };
 
-    if (!result.ok) {
-      setMessage(result.data.message);
+  const startEdit = (order) => {
+    if (order.status === "cancelled") {
+      setMessageType("error");
+      setMessage("لا يمكن تعديل طلب ملغى");
+      return;
+    }
+    if (order.status === "delivered" || order.status === "returned") {
+      setMessageType("error");
+      setMessage("لا يمكن تعديل طلب بعد التسليم أو الإرجاع");
       return;
     }
 
-    setForm(emptyForm);
-    setCustomerQuery("");
-    setMessage("تم تسجيل الطلب على المندوب");
+    const amount = Number(order.amount) || 0;
+    const paid = Number(order.paid ?? order.paid_amount ?? 0);
+    const remaining = Number.isFinite(Number(order.remaining))
+      ? Number(order.remaining)
+      : Math.max(0, amount - (Number.isFinite(paid) ? paid : 0));
+
+    setEditingId(order.id);
+    setForm({
+      agentId: String(order.agent_id || ""),
+      customerId: order.customer_id ? String(order.customer_id) : "",
+      customerName: order.customer_name || "",
+      amount: String(amount),
+      paid: String(Number.isFinite(paid) ? paid : 0),
+      remaining: String(remaining),
+      priority: String(order.priority ?? 1),
+    });
+    setCustomerQuery(
+      `${order.customer_name || ""}${
+        order.customer_phone ? ` · ${order.customer_phone}` : ""
+      }`
+    );
+    setMessageType("success");
+    setMessage(`تعديل الطلب #${order.id}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const onSubmit = async (event) => {
+    event.preventDefault();
+    const payload = {
+      ...form,
+      customerName: form.customerName || selectedCustomer?.name || customerQuery,
+    };
+
+    const result = editingId
+      ? await opsApi.updateOrder(editingId, payload)
+      : await opsApi.createOrder(payload);
+
+    if (!result.ok) {
+      setMessageType("error");
+      setMessage(result.data.message || "تعذر حفظ الطلب");
+      return;
+    }
+
+    resetForm();
+    setMessageType("success");
+    setMessage(
+      editingId ? "تم تعديل الطلب" : "تم تسجيل الطلب على المندوب"
+    );
+    await load();
+  };
+
+  const cancelOrder = async (order) => {
+    if (order.status === "cancelled") return;
+    if (order.status === "delivered") {
+      setMessageType("error");
+      setMessage("لا يمكن إلغاء طلب تم تسليمه");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `إلغاء الطلب #${order.id} للزبون ${order.customer_name}؟`
+      )
+    ) {
+      return;
+    }
+
+    const result = await opsApi.cancelOrder(order.id);
+    if (!result.ok) {
+      setMessageType("error");
+      setMessage(result.data.message || "تعذر إلغاء الطلب");
+      return;
+    }
+
+    if (Number(editingId) === Number(order.id)) {
+      resetForm();
+    }
+    setMessageType("success");
+    setMessage("تم إلغاء الطلب");
     await load();
   };
 
   const collectFromCustomer = async (orderId) => {
     const result = await opsApi.markCustomerPaid(orderId);
     if (!result.ok) {
+      setMessageType("error");
       setMessage(result.data.message || "تعذر تسجيل الاستلام من الزبون");
       return;
     }
+    setMessageType("success");
     setMessage("تم تسجيل استلام المبلغ من الزبون");
     await load();
   };
 
   const collect = async (orderId) => {
     await opsApi.markOrderCollected(orderId);
+    setMessageType("success");
     setMessage("تم تسجيل تحصيل المبلغ من المندوب");
     await load();
   };
+
+  const canModify = (order) =>
+    order.status === "registered" || order.status === "nearby";
 
   return (
     <section className="panel">
       <header className="panel-header">
         <div>
           <h2>الطلبات (يومية)</h2>
-          <p>سجّل طلبًا على مندوب ليظهر كمربع على الخريطة حسب الحالة</p>
+          <p>
+            سجّل طلبًا على مندوب، ويمكنك تعديله أو إلغاؤه قبل التسليم أو الإرجاع
+          </p>
         </div>
         <select value={day} onChange={(event) => setDay(event.target.value)}>
           <option value="today">اليوم</option>
@@ -177,9 +269,17 @@ export default function AdminOrdersPage() {
         </select>
       </header>
 
-      {message && <div className="message success">{message}</div>}
+      {message && (
+        <div className={`message ${messageType}`}>{message}</div>
+      )}
 
       <form className="panel-form" onSubmit={onSubmit}>
+        {editingId ? (
+          <p className="empty-hint" style={{ marginBottom: 10 }}>
+            جارٍ تعديل الطلب رقم <strong>#{editingId}</strong>
+          </p>
+        ) : null}
+
         <div className="form-grid">
           <label className="input-group">
             <span>اختر المندوب</span>
@@ -307,9 +407,20 @@ export default function AdminOrdersPage() {
             />
           </label>
         </div>
-        <button className="primary-button" type="submit">
-          تسجيل الطلب على المندوب
-        </button>
+        <div className="form-buttons">
+          <button className="primary-button" type="submit">
+            {editingId ? "حفظ تعديل الطلب" : "تسجيل الطلب على المندوب"}
+          </button>
+          {editingId ? (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={resetForm}
+            >
+              إلغاء التعديل
+            </button>
+          ) : null}
+        </div>
       </form>
 
       <div className="table-wrap">
@@ -324,29 +435,35 @@ export default function AdminOrdersPage() {
               <th>الباقي</th>
               <th>الأولوية</th>
               <th>تحصيل</th>
+              <th>إجراءات</th>
             </tr>
           </thead>
           <tbody>
             {orders.length === 0 ? (
               <tr>
-                <td colSpan={8} className="empty-hint">
+                <td colSpan={9} className="empty-hint">
                   لا توجد طلبات لهذا اليوم
                 </td>
               </tr>
             ) : (
               orders.map((order) => {
                 const amount = Number(order.amount) || 0;
-                const paid = Number(
-                  order.paid ?? order.paid_amount ?? 0
-                );
+                const paid = Number(order.paid ?? order.paid_amount ?? 0);
                 const remaining = Number.isFinite(Number(order.remaining))
                   ? Number(order.remaining)
                   : Number.isFinite(Number(order.remaining_amount))
                     ? Number(order.remaining_amount)
                     : Math.max(0, amount - (Number.isFinite(paid) ? paid : 0));
+                const meta = ORDER_STATUS[order.status] || ORDER_STATUS.registered;
+                const editable = canModify(order);
 
                 return (
-                  <tr key={order.id}>
+                  <tr
+                    key={order.id}
+                    className={
+                      order.status === "cancelled" ? "order-row-cancelled" : ""
+                    }
+                  >
                     <td>
                       <div>{order.customer_name}</div>
                       {order.customer_phone ? (
@@ -354,38 +471,81 @@ export default function AdminOrdersPage() {
                       ) : null}
                     </td>
                     <td>{order.agent_name}</td>
-                    <td>{ORDER_STATUS[order.status]?.label || order.status}</td>
+                    <td>
+                      <span
+                        className="status-pill"
+                        style={{
+                          background: `${meta.color}22`,
+                          color: meta.color,
+                          borderColor: `${meta.color}55`,
+                        }}
+                      >
+                        {meta.label}
+                      </span>
+                    </td>
                     <td dir="ltr">{amount}</td>
                     <td dir="ltr">{Number.isFinite(paid) ? paid : 0}</td>
                     <td dir="ltr">{remaining}</td>
                     <td>{order.priority || "-"}</td>
                     <td>
-                      <div className="collect-actions">
-                        {order.customer_paid ? (
-                          <span className="collect-done">
-                            تم استلام المبلغ من الزبون
-                          </span>
-                        ) : (
-                          <button
-                            className="secondary-button"
-                            type="button"
-                            onClick={() => collectFromCustomer(order.id)}
-                          >
-                            استلام المبلغ من الزبون
-                          </button>
-                        )}
+                      {order.status === "cancelled" ? (
+                        <span className="collect-done">—</span>
+                      ) : (
+                        <div className="collect-actions">
+                          {order.customer_paid ? (
+                            <span className="collect-done">
+                              تم استلام المبلغ من الزبون
+                            </span>
+                          ) : (
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              onClick={() => collectFromCustomer(order.id)}
+                            >
+                              استلام المبلغ من الزبون
+                            </button>
+                          )}
 
-                        {order.status === "delivered" && !order.collected ? (
-                          <button
-                            className="primary-button"
-                            type="button"
-                            onClick={() => collect(order.id)}
-                          >
-                            تحصيل من المندوب
-                          </button>
-                        ) : order.collected ? (
-                          <span className="collect-done">تم التحصيل من المندوب</span>
-                        ) : null}
+                          {order.status === "delivered" && !order.collected ? (
+                            <button
+                              className="primary-button"
+                              type="button"
+                              onClick={() => collect(order.id)}
+                            >
+                              تحصيل من المندوب
+                            </button>
+                          ) : order.collected ? (
+                            <span className="collect-done">
+                              تم التحصيل من المندوب
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div className="table-actions">
+                        {editable ? (
+                          <>
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              onClick={() => startEdit(order)}
+                            >
+                              تعديل
+                            </button>
+                            <button
+                              className="danger-button"
+                              type="button"
+                              onClick={() => cancelOrder(order)}
+                            >
+                              إلغاء
+                            </button>
+                          </>
+                        ) : order.status === "cancelled" ? (
+                          <span className="collect-done">ملغى</span>
+                        ) : (
+                          <span className="collect-done">مغلق</span>
+                        )}
                       </div>
                     </td>
                   </tr>

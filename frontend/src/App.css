@@ -1095,6 +1095,23 @@
   color: #128048;
 }
 
+.status-pill {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.order-row-cancelled {
+  opacity: 0.72;
+}
+
+.order-row-cancelled td {
+  text-decoration: none;
+}
+
 .attendance-calendar-bar {
   margin-bottom: 18px;
   padding: 16px;

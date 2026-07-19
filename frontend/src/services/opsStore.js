@@ -335,6 +335,7 @@ export const ORDER_STATUS = {
   nearby: { key: "nearby", label: "قريب", color: "#eab308" },
   delivered: { key: "delivered", label: "تم التسليم", color: "#16a34a" },
   returned: { key: "returned", label: "راجع", color: "#dc2626" },
+  cancelled: { key: "cancelled", label: "ملغى", color: "#6b7280" },
 };
 
 export const opsApi = {
@@ -794,7 +795,9 @@ export const opsApi = {
 
     if (agentId) {
       orders = orders.filter(
-        (order) => Number(order.agent_id) === Number(agentId)
+        (order) =>
+          Number(order.agent_id) === Number(agentId) &&
+          order.status !== "cancelled"
       );
     }
 
@@ -893,6 +896,108 @@ export const opsApi = {
     store.orders.unshift(order);
     await saveOps(store);
     return { ok: true, status: 201, data: { success: true, order } };
+  },
+
+  async updateOrder(
+    orderId,
+    { agentId, customerId, customerName, amount, paid, remaining, priority }
+  ) {
+    const store = await syncOpsFromServer();
+    const order = store.orders.find(
+      (item) => Number(item.id) === Number(orderId)
+    );
+
+    if (!order) {
+      return fail("الطلب غير موجود", 404);
+    }
+
+    if (order.status === "cancelled") {
+      return fail("لا يمكن تعديل طلب ملغى");
+    }
+
+    if (order.status === "delivered" || order.status === "returned") {
+      return fail("لا يمكن تعديل طلب بعد التسليم أو الإرجاع");
+    }
+
+    const agent = store.agents.find(
+      (item) => Number(item.id) === Number(agentId)
+    );
+    const customer = store.customers.find(
+      (item) => Number(item.id) === Number(customerId)
+    );
+
+    if (!agent) {
+      return fail("اختر المندوب");
+    }
+
+    const name = customer?.name || String(customerName || "").trim();
+    if (!name) {
+      return fail("اختر الزبون من نتائج البحث");
+    }
+
+    if (!customer?.id && !String(customerId || "").trim()) {
+      return fail("اختر الزبون من نتائج البحث");
+    }
+
+    const lat = Number(customer?.latitude);
+    const lng = Number(customer?.longitude);
+    const hasCoords = isValidCoords(lat, lng);
+
+    const total = Number(amount) || 0;
+    const paidValue = Number(paid);
+    const remainingValue = Number(remaining);
+    const paidAmount = Number.isFinite(paidValue) ? paidValue : 0;
+    const remainingAmount = Number.isFinite(remainingValue)
+      ? remainingValue
+      : Math.max(0, total - paidAmount);
+
+    order.agent_id = agent.id;
+    order.agent_name = agent.name;
+    order.customer_id = customer?.id || null;
+    order.customer_name = name;
+    order.customer_phone = customer?.phone || "";
+    order.customer_address = customer?.address || "";
+    order.customer_maps_url = customer?.mapsUrl || "";
+    order.latitude = hasCoords ? lat : null;
+    order.longitude = hasCoords ? lng : null;
+    order.amount = total;
+    order.paid = paidAmount;
+    order.remaining = remainingAmount;
+    order.priority = Number(priority) || 0;
+    order.updated_at = new Date().toISOString();
+
+    // If reassigned while nearby, reset to registered so agent path refreshes.
+    if (order.status === "nearby") {
+      order.status = "registered";
+    }
+
+    await saveOps(store);
+    return ok({ order, message: "تم تعديل الطلب" });
+  },
+
+  async cancelOrder(orderId) {
+    const store = await syncOpsFromServer();
+    const order = store.orders.find(
+      (item) => Number(item.id) === Number(orderId)
+    );
+
+    if (!order) {
+      return fail("الطلب غير موجود", 404);
+    }
+
+    if (order.status === "cancelled") {
+      return fail("الطلب ملغى مسبقًا");
+    }
+
+    if (order.status === "delivered") {
+      return fail("لا يمكن إلغاء طلب تم تسليمه");
+    }
+
+    order.status = "cancelled";
+    order.cancelled_at = new Date().toISOString();
+    order.updated_at = new Date().toISOString();
+    await saveOps(store);
+    return ok({ order, message: "تم إلغاء الطلب" });
   },
 
   async updateOrderStatus(orderId, { status, amount, agentLocation }) {
