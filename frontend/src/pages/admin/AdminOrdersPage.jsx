@@ -13,6 +13,7 @@ const emptyForm = {
 
 export default function AdminOrdersPage() {
   const [day, setDay] = useState("today");
+  const [filterAgentId, setFilterAgentId] = useState("");
   const [agents, setAgents] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -36,6 +37,13 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     load();
   }, [day]);
+
+  useEffect(() => {
+    if (!filterAgentId) return;
+    setForm((current) =>
+      current.agentId ? current : { ...current, agentId: filterAgentId }
+    );
+  }, [filterAgentId]);
 
   const filteredCustomers = useMemo(() => {
     const query = customerQuery.trim().toLowerCase();
@@ -180,6 +188,7 @@ export default function AdminOrdersPage() {
     event.preventDefault();
     const payload = {
       ...form,
+      agentId: form.agentId || filterAgentId,
       customerName: form.customerName || selectedCustomer?.name || customerQuery,
     };
 
@@ -254,49 +263,127 @@ export default function AdminOrdersPage() {
   const canModify = (order) =>
     order.status === "registered" || order.status === "nearby";
 
+  const selectedFilterAgent = useMemo(
+    () =>
+      agents.find((item) => Number(item.id) === Number(filterAgentId)) || null,
+    [agents, filterAgentId]
+  );
+
+  const agentOrders = useMemo(() => {
+    if (!filterAgentId) return [];
+    return orders.filter(
+      (order) => Number(order.agent_id) === Number(filterAgentId)
+    );
+  }, [orders, filterAgentId]);
+
+  const agentSummary = useMemo(() => {
+    const open = agentOrders.filter(
+      (order) =>
+        order.status === "registered" || order.status === "nearby"
+    ).length;
+    const delivered = agentOrders.filter(
+      (order) => order.status === "delivered"
+    ).length;
+    const returned = agentOrders.filter(
+      (order) => order.status === "returned"
+    ).length;
+    const cancelled = agentOrders.filter(
+      (order) => order.status === "cancelled"
+    ).length;
+    return {
+      total: agentOrders.length,
+      open,
+      delivered,
+      returned,
+      cancelled,
+    };
+  }, [agentOrders]);
+
   return (
     <section className="panel">
       <header className="panel-header">
         <div>
           <h2>الطلبات (يومية)</h2>
           <p>
-            سجّل طلبًا على مندوب، ويمكنك تعديله أو إلغاؤه قبل التسليم أو الإرجاع
+            اختر المندوب أولًا لعرض طلباته فقط، ثم سجّل أو عدّل أو ألغِ حسب الحاجة
           </p>
         </div>
-        <select value={day} onChange={(event) => setDay(event.target.value)}>
-          <option value="today">اليوم</option>
-          <option value="yesterday">أمس</option>
-        </select>
+        <div className="topbar-actions">
+          <select
+            value={filterAgentId}
+            onChange={(event) => setFilterAgentId(event.target.value)}
+          >
+            <option value="">-- اختر المندوب لعرض طلباته --</option>
+            {agents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name}
+              </option>
+            ))}
+          </select>
+          <select value={day} onChange={(event) => setDay(event.target.value)}>
+            <option value="today">اليوم</option>
+            <option value="yesterday">أمس</option>
+          </select>
+        </div>
       </header>
 
       {message && (
         <div className={`message ${messageType}`}>{message}</div>
       )}
 
-      <form className="panel-form" onSubmit={onSubmit}>
-        {editingId ? (
-          <p className="empty-hint" style={{ marginBottom: 10 }}>
-            جارٍ تعديل الطلب رقم <strong>#{editingId}</strong>
+      {!filterAgentId ? (
+        <div className="agent-orders-gate">
+          <strong>اختر المندوب من القائمة أعلاه</strong>
+          <p>
+            بعد اختيار المندوب ستظهر طلباته فقط دون دمجها مع باقي المندوبين.
           </p>
-        ) : null}
-
-        <div className="form-grid">
-          <label className="input-group">
-            <span>اختر المندوب</span>
-            <select
-              name="agentId"
-              value={form.agentId}
-              onChange={onChange}
-              required
+        </div>
+      ) : (
+        <>
+          <div className="agent-orders-banner">
+            <div>
+              <strong>طلبات المندوب: {selectedFilterAgent?.name}</strong>
+              <p>
+                الإجمالي {agentSummary.total} · مفتوحة {agentSummary.open} ·
+                مسلّمة {agentSummary.delivered} · راجعة {agentSummary.returned}
+                {agentSummary.cancelled
+                  ? ` · ملغاة ${agentSummary.cancelled}`
+                  : ""}
+              </p>
+            </div>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setFilterAgentId("")}
             >
-              <option value="">-- اختر مندوب --</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              تغيير المندوب
+            </button>
+          </div>
+
+          <form className="panel-form" onSubmit={onSubmit}>
+            {editingId ? (
+              <p className="empty-hint" style={{ marginBottom: 10 }}>
+                جارٍ تعديل الطلب رقم <strong>#{editingId}</strong>
+              </p>
+            ) : null}
+
+            <div className="form-grid">
+              <label className="input-group">
+                <span>المندوب</span>
+                <select
+                  name="agentId"
+                  value={form.agentId || filterAgentId}
+                  onChange={onChange}
+                  required
+                >
+                  <option value="">-- اختر مندوب --</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
           <div className="input-group customer-search-field">
             <span>الزبون</span>
@@ -439,14 +526,14 @@ export default function AdminOrdersPage() {
             </tr>
           </thead>
           <tbody>
-            {orders.length === 0 ? (
+            {agentOrders.length === 0 ? (
               <tr>
                 <td colSpan={9} className="empty-hint">
-                  لا توجد طلبات لهذا اليوم
+                  لا توجد طلبات لهذا المندوب في {day === "today" ? "اليوم" : "أمس"}
                 </td>
               </tr>
             ) : (
-              orders.map((order) => {
+              agentOrders.map((order) => {
                 const amount = Number(order.amount) || 0;
                 const paid = Number(order.paid ?? order.paid_amount ?? 0);
                 const remaining = Number.isFinite(Number(order.remaining))
@@ -555,6 +642,8 @@ export default function AdminOrdersPage() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
     </section>
   );
 }
