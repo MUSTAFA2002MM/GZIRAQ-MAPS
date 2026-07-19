@@ -102,6 +102,7 @@ function createDefaultOps() {
     orders: [],
     attendance: [],
     agentLocations: [],
+    notifications: [],
     updatedAt: 0,
     nextIds: {
       agent: 1,
@@ -109,6 +110,7 @@ function createDefaultOps() {
       customer: 1,
       order: 1,
       attendance: 1,
+      notification: 1,
     },
   };
 }
@@ -153,6 +155,7 @@ function normalizeStore(parsed) {
     orders: parsed?.orders || [],
     attendance: parsed?.attendance || [],
     agentLocations: parsed?.agentLocations || [],
+    notifications: parsed?.notifications || [],
     updatedAt: Number(parsed?.updatedAt) || 0,
     nextIds: {
       ...createDefaultOps().nextIds,
@@ -1047,6 +1050,35 @@ export const opsApi = {
 
     order.status = status;
     order.updated_at = new Date().toISOString();
+
+    if (status === "delivered" || status === "returned") {
+      if (!Array.isArray(store.notifications)) {
+        store.notifications = [];
+      }
+      if (!store.nextIds) store.nextIds = {};
+      if (!store.nextIds.notification) store.nextIds.notification = 1;
+
+      const isDelivered = status === "delivered";
+      store.notifications.unshift({
+        id: store.nextIds.notification++,
+        type: isDelivered ? "order_delivered" : "order_returned",
+        title: isDelivered ? "تم تسليم طلب" : "طلب راجع",
+        body: isDelivered
+          ? `المندوب ${order.agent_name} سلّم طلب الزبون ${order.customer_name}`
+          : `المندوب ${order.agent_name} سجّل راجع لطلب ${order.customer_name}`,
+        order_id: order.id,
+        agent_id: order.agent_id,
+        agent_name: order.agent_name,
+        customer_name: order.customer_name,
+        amount: order.amount,
+        created_at: new Date().toISOString(),
+        read: false,
+      });
+
+      // Keep last 100 admin notifications
+      store.notifications = store.notifications.slice(0, 100);
+    }
+
     await saveOps(store);
     return ok({
       order,
@@ -1413,6 +1445,89 @@ export const opsApi = {
         online_names: onlineAgents.map((item) => item.agent_name),
         connected_agents: liveEntries,
       },
+    });
+  },
+
+  async listNotifications({ unreadOnly = false } = {}) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(
+        `${API_URL}/api/ops/notifications?unreadOnly=${
+          unreadOnly ? "1" : "0"
+        }&_=${Date.now()}`,
+        { signal: controller.signal, cache: "no-store" }
+      );
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        const data = await response.json();
+        return ok({
+          notifications: data.notifications || [],
+          unreadCount: data.unreadCount || 0,
+        });
+      }
+    } catch (error) {
+      console.warn("notifications endpoint failed, falling back:", error);
+    }
+
+    const store = await syncOpsFromServer();
+    let notifications = Array.isArray(store.notifications)
+      ? [...store.notifications]
+      : [];
+    if (unreadOnly) {
+      notifications = notifications.filter((item) => !item.read);
+    }
+    notifications.sort((a, b) => {
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bTime - aTime;
+    });
+    return ok({
+      notifications: notifications.slice(0, 50),
+      unreadCount: notifications.filter((item) => !item.read).length,
+    });
+  },
+
+  async markNotificationsRead({ ids = [], all = false } = {}) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(`${API_URL}/api/ops/notifications/read`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, all }),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        const data = await response.json();
+        return ok({
+          message: data.message || "تم",
+          unreadCount: data.unreadCount || 0,
+        });
+      }
+    } catch (error) {
+      console.warn("mark notifications failed, falling back:", error);
+    }
+
+    return withOpsLock(async () => {
+      const store = await syncOpsFromServer();
+      if (!Array.isArray(store.notifications)) store.notifications = [];
+      const idSet = new Set((ids || []).map((id) => Number(id)));
+      store.notifications = store.notifications.map((item) => {
+        if (all || idSet.has(Number(item.id))) {
+          return { ...item, read: true };
+        }
+        return item;
+      });
+      await saveOps(store);
+      return ok({
+        message: "تم تحديث الإشعارات",
+        unreadCount: store.notifications.filter((item) => !item.read).length,
+      });
     });
   },
 

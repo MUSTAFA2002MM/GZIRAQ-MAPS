@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import AdminNotifications from "../components/admin/AdminNotifications";
 import ThemeToggle from "../components/common/ThemeToggle";
 import { useAuth } from "../hooks/useAuth";
 import { opsApi } from "../services/opsStore";
@@ -104,6 +105,7 @@ export default function DashboardLayout({ role }) {
       </aside>
 
       <main className="dashboard-main">
+        {role === "admin" ? <AdminNotifications /> : null}
         <Outlet />
       </main>
     </div>

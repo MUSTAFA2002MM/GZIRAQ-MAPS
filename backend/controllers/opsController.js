@@ -4,6 +4,7 @@ const {
   createDefaultOps,
   normalizeAdminProfile,
   mergeAgentLocations,
+  mergeNotifications,
 } = require("../services/opsService");
 
 function publicStore(store) {
@@ -57,9 +58,18 @@ function putOps(req, res) {
       current.agentLocations || [],
       Array.isArray(incoming.agentLocations) ? incoming.agentLocations : []
     ),
+    notifications: mergeNotifications(
+      current.notifications || [],
+      Array.isArray(incoming.notifications) ? incoming.notifications : []
+    ),
     nextIds: {
       ...defaults.nextIds,
       ...(incoming.nextIds || {}),
+      notification: Math.max(
+        Number(defaults.nextIds.notification) || 1,
+        Number(current.nextIds?.notification) || 1,
+        Number(incoming.nextIds?.notification) || 1
+      ),
     },
   };
 
@@ -137,6 +147,57 @@ function updateAgentLocation(req, res) {
   });
 }
 
+function listNotifications(req, res) {
+  const unreadOnly = String(req.query.unreadOnly || "") === "1";
+  const store = readStore();
+  let notifications = Array.isArray(store.notifications)
+    ? [...store.notifications]
+    : [];
+
+  if (unreadOnly) {
+    notifications = notifications.filter((item) => !item.read);
+  }
+
+  notifications.sort((a, b) => {
+    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  return res.json({
+    success: true,
+    notifications: notifications.slice(0, 50),
+    unreadCount: notifications.filter((item) => !item.read).length,
+  });
+}
+
+function markNotificationsRead(req, res) {
+  const ids = Array.isArray(req.body?.ids)
+    ? req.body.ids.map((id) => Number(id)).filter((id) => Number.isFinite(id))
+    : [];
+  const markAll = Boolean(req.body?.all);
+
+  const store = readStore();
+  if (!Array.isArray(store.notifications)) {
+    store.notifications = [];
+  }
+
+  store.notifications = store.notifications.map((item) => {
+    if (markAll || ids.includes(Number(item.id))) {
+      return { ...item, read: true };
+    }
+    return item;
+  });
+  store.updatedAt = Date.now();
+  writeStore(store);
+
+  return res.json({
+    success: true,
+    message: "تم تحديث الإشعارات",
+    unreadCount: store.notifications.filter((item) => !item.read).length,
+  });
+}
+
 function adminLogin(req, res) {
   const password = String(req.body?.password || "");
   const store = readStore();
@@ -198,6 +259,8 @@ module.exports = {
   putOps,
   listAgentLocations,
   updateAgentLocation,
+  listNotifications,
+  markNotificationsRead,
   adminLogin,
   changeAdminPassword,
 };

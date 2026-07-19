@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, Popup, Polyline, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import { useAuth } from "../../hooks/useAuth";
@@ -133,6 +133,8 @@ export default function DeliveryMapPage() {
   const locationReady = geoStatus === "ready" && Boolean(location);
   const [sharingOk, setSharingOk] = useState(false);
   const liveSharingActive = locationReady && sharingOk;
+  const [arrivalOrderId, setArrivalOrderId] = useState(null);
+  const announcedArrival = useRef(new Set());
 
   const loadOrders = async () => {
     const result = await opsApi.listOrders({ day, agentId: user?.id });
@@ -293,6 +295,34 @@ export default function DeliveryMapPage() {
     });
   }, [orders, location, liveSharingActive]);
 
+  const readyToDeliver = useMemo(
+    () =>
+      ordersWithDistance.filter(
+        (order) =>
+          order.canComplete &&
+          (order.status === "registered" || order.status === "nearby")
+      ),
+    [ordersWithDistance]
+  );
+
+  useEffect(() => {
+    if (!readyToDeliver.length) {
+      setArrivalOrderId(null);
+      return;
+    }
+
+    const next = readyToDeliver[0];
+    setArrivalOrderId(next.id);
+
+    if (!announcedArrival.current.has(next.id)) {
+      announcedArrival.current.add(next.id);
+      setMessageType("success");
+      setMessage(
+        `وصلت لموقع الزبون ${next.customer_name} · يمكنك الضغط على تسليم الآن`
+      );
+    }
+  }, [readyToDeliver]);
+
   const updateStatus = async (order, status) => {
     setMessage("");
     let amount = order.amount;
@@ -432,6 +462,26 @@ export default function DeliveryMapPage() {
         </div>
       )}
 
+      {liveSharingActive && readyToDeliver.length > 0 ? (
+        <div className="arrival-deliver-banner">
+          <div>
+            <strong>وصلت إلى موقع الزبون</strong>
+            <p>
+              {readyToDeliver
+                .map((order) => `${order.customer_name} (${order.distanceMeters}م)`)
+                .join(" · ")}
+            </p>
+          </div>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => updateStatus(readyToDeliver[0], "delivered")}
+          >
+            تسليم الآن
+          </button>
+        </div>
+      ) : null}
+
       <div className="attendance-box">
         <strong>
           الحضور (نطاق الشركة {company?.radiusMeters ?? 100}م)
@@ -555,7 +605,12 @@ export default function DeliveryMapPage() {
       <h3>طلبات اليوم ({openOrders.length} مفتوحة)</h3>
       <div className="chips-list">
         {ordersWithDistance.map((order) => (
-          <div key={order.id} className="order-card">
+          <div
+            key={order.id}
+            className={`order-card ${
+              order.canComplete ? "is-ready-deliver" : ""
+            } ${arrivalOrderId === order.id ? "is-arrival" : ""}`}
+          >
             <div className="order-card-main">
               <strong>{order.customer_name}</strong>
               <p>
@@ -582,12 +637,16 @@ export default function DeliveryMapPage() {
             {(order.status === "nearby" || order.status === "registered") && (
               <div className="table-actions">
                 <button
-                  className="primary-button"
+                  className={`primary-button ${
+                    order.canComplete ? "deliver-ready-btn" : ""
+                  }`}
                   type="button"
                   disabled={!order.canComplete}
                   onClick={() => updateStatus(order, "delivered")}
                 >
-                  {order.canComplete ? "تسليم" : `اقترب ≤${DELIVERY_RADIUS_METERS}م`}
+                  {order.canComplete
+                    ? "تسليم (وصلت للموقع)"
+                    : `اقترب ≤${DELIVERY_RADIUS_METERS}م`}
                 </button>
                 <button
                   className="danger-button"

@@ -25,12 +25,14 @@ function createDefaultOps() {
     orders: [],
     attendance: [],
     agentLocations: [],
+    notifications: [],
     nextIds: {
       agent: 1,
       employee: 1,
       customer: 1,
       order: 1,
       attendance: 1,
+      notification: 1,
     },
   };
 }
@@ -84,6 +86,39 @@ function mergeAgentLocations(current = [], incoming = []) {
   });
 }
 
+function mergeNotifications(current = [], incoming = []) {
+  const map = new Map();
+
+  for (const item of [...(current || []), ...(incoming || [])]) {
+    if (!item || item.id == null) continue;
+    const id = Number(item.id);
+    if (!Number.isFinite(id)) continue;
+
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, { ...item, id, read: Boolean(item.read) });
+      continue;
+    }
+
+    const prevTime = prev.created_at ? new Date(prev.created_at).getTime() : 0;
+    const nextTime = item.created_at ? new Date(item.created_at).getTime() : 0;
+    const newer = nextTime >= prevTime ? item : prev;
+    map.set(id, {
+      ...newer,
+      id,
+      read: Boolean(prev.read || item.read),
+    });
+  }
+
+  return Array.from(map.values())
+    .sort((a, b) => {
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bTime - aTime;
+    })
+    .slice(0, 100);
+}
+
 function normalizeCompany(company) {
   const defaults = createDefaultOps().company;
   const source = company || {};
@@ -125,6 +160,7 @@ function readStore() {
       orders: parsed.orders || [],
       attendance: parsed.attendance || [],
       agentLocations: parsed.agentLocations || [],
+      notifications: parsed.notifications || [],
       nextIds: {
         ...createDefaultOps().nextIds,
         ...(parsed.nextIds || {}),
@@ -145,6 +181,7 @@ module.exports = {
   createDefaultOps,
   normalizeAdminProfile,
   mergeAgentLocations,
+  mergeNotifications,
   readStore,
   writeStore,
 };
