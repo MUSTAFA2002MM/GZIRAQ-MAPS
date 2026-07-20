@@ -38,13 +38,6 @@ export default function AdminOrdersPage() {
     load();
   }, [day]);
 
-  useEffect(() => {
-    if (!filterAgentId) return;
-    setForm((current) =>
-      current.agentId ? current : { ...current, agentId: filterAgentId }
-    );
-  }, [filterAgentId]);
-
   const filteredCustomers = useMemo(() => {
     const query = customerQuery.trim().toLowerCase();
     if (!query) return customers;
@@ -188,7 +181,6 @@ export default function AdminOrdersPage() {
     event.preventDefault();
     const payload = {
       ...form,
-      agentId: form.agentId || filterAgentId,
       customerName: form.customerName || selectedCustomer?.name || customerQuery,
     };
 
@@ -299,27 +291,149 @@ export default function AdminOrdersPage() {
     };
   }, [agentOrders]);
 
+  const renderOrdersTable = (rows, emptyMessage) => (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>الزبون</th>
+            <th>المندوب</th>
+            <th>الحالة</th>
+            <th>المبلغ</th>
+            <th>الواصل</th>
+            <th>الباقي</th>
+            <th>الأولوية</th>
+            <th>تحصيل</th>
+            <th>إجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={9} className="empty-hint">
+                {emptyMessage}
+              </td>
+            </tr>
+          ) : (
+            rows.map((order) => {
+              const amount = Number(order.amount) || 0;
+              const paid = Number(order.paid ?? order.paid_amount ?? 0);
+              const remaining = Number.isFinite(Number(order.remaining))
+                ? Number(order.remaining)
+                : Number.isFinite(Number(order.remaining_amount))
+                  ? Number(order.remaining_amount)
+                  : Math.max(0, amount - (Number.isFinite(paid) ? paid : 0));
+              const meta = ORDER_STATUS[order.status] || ORDER_STATUS.registered;
+              const editable = canModify(order);
+
+              return (
+                <tr
+                  key={order.id}
+                  className={
+                    order.status === "cancelled" ? "order-row-cancelled" : ""
+                  }
+                >
+                  <td>
+                    <div>{order.customer_name}</div>
+                    {order.customer_phone ? (
+                      <small dir="ltr">{order.customer_phone}</small>
+                    ) : null}
+                  </td>
+                  <td>{order.agent_name}</td>
+                  <td>
+                    <span
+                      className="status-pill"
+                      style={{
+                        background: `${meta.color}22`,
+                        color: meta.color,
+                        borderColor: `${meta.color}55`,
+                      }}
+                    >
+                      {meta.label}
+                    </span>
+                  </td>
+                  <td dir="ltr">{amount}</td>
+                  <td dir="ltr">{Number.isFinite(paid) ? paid : 0}</td>
+                  <td dir="ltr">{remaining}</td>
+                  <td>{order.priority || "-"}</td>
+                  <td>
+                    {order.status === "cancelled" ? (
+                      <span className="collect-done">—</span>
+                    ) : (
+                      <div className="collect-actions">
+                        {order.customer_paid ? (
+                          <span className="collect-done">
+                            تم استلام المبلغ من الزبون
+                          </span>
+                        ) : (
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => collectFromCustomer(order.id)}
+                          >
+                            استلام المبلغ من الزبون
+                          </button>
+                        )}
+
+                        {order.status === "delivered" && !order.collected ? (
+                          <button
+                            className="primary-button"
+                            type="button"
+                            onClick={() => collect(order.id)}
+                          >
+                            تحصيل من المندوب
+                          </button>
+                        ) : order.collected ? (
+                          <span className="collect-done">
+                            تم التحصيل من المندوب
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <div className="table-actions">
+                      {editable ? (
+                        <>
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => startEdit(order)}
+                          >
+                            تعديل
+                          </button>
+                          <button
+                            className="danger-button"
+                            type="button"
+                            onClick={() => cancelOrder(order)}
+                          >
+                            إلغاء
+                          </button>
+                        </>
+                      ) : order.status === "cancelled" ? (
+                        <span className="collect-done">ملغى</span>
+                      ) : (
+                        <span className="collect-done">مغلق</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <section className="panel">
       <header className="panel-header">
         <div>
           <h2>الطلبات (يومية)</h2>
-          <p>
-            اختر المندوب أولًا لعرض طلباته فقط، ثم سجّل أو عدّل أو ألغِ حسب الحاجة
-          </p>
+          <p>تسجيل الطلبات على المندوبين ومتابعة التحصيل والتعديل والإلغاء</p>
         </div>
         <div className="topbar-actions">
-          <select
-            value={filterAgentId}
-            onChange={(event) => setFilterAgentId(event.target.value)}
-          >
-            <option value="">-- اختر المندوب لعرض طلباته --</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
           <select value={day} onChange={(event) => setDay(event.target.value)}>
             <option value="today">اليوم</option>
             <option value="yesterday">أمس</option>
@@ -331,59 +445,30 @@ export default function AdminOrdersPage() {
         <div className={`message ${messageType}`}>{message}</div>
       )}
 
-      {!filterAgentId ? (
-        <div className="agent-orders-gate">
-          <strong>اختر المندوب من القائمة أعلاه</strong>
-          <p>
-            بعد اختيار المندوب ستظهر طلباته فقط دون دمجها مع باقي المندوبين.
+      <form className="panel-form" onSubmit={onSubmit}>
+        {editingId ? (
+          <p className="empty-hint" style={{ marginBottom: 10 }}>
+            جارٍ تعديل الطلب رقم <strong>#{editingId}</strong>
           </p>
-        </div>
-      ) : (
-        <>
-          <div className="agent-orders-banner">
-            <div>
-              <strong>طلبات المندوب: {selectedFilterAgent?.name}</strong>
-              <p>
-                الإجمالي {agentSummary.total} · مفتوحة {agentSummary.open} ·
-                مسلّمة {agentSummary.delivered} · راجعة {agentSummary.returned}
-                {agentSummary.cancelled
-                  ? ` · ملغاة ${agentSummary.cancelled}`
-                  : ""}
-              </p>
-            </div>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => setFilterAgentId("")}
+        ) : null}
+
+        <div className="form-grid">
+          <label className="input-group">
+            <span>المندوب</span>
+            <select
+              name="agentId"
+              value={form.agentId}
+              onChange={onChange}
+              required
             >
-              تغيير المندوب
-            </button>
-          </div>
-
-          <form className="panel-form" onSubmit={onSubmit}>
-            {editingId ? (
-              <p className="empty-hint" style={{ marginBottom: 10 }}>
-                جارٍ تعديل الطلب رقم <strong>#{editingId}</strong>
-              </p>
-            ) : null}
-
-            <div className="form-grid">
-              <label className="input-group">
-                <span>المندوب</span>
-                <select
-                  name="agentId"
-                  value={form.agentId || filterAgentId}
-                  onChange={onChange}
-                  required
-                >
-                  <option value="">-- اختر مندوب --</option>
-                  {agents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <option value="">-- اختر مندوب --</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <div className="input-group customer-search-field">
             <span>الزبون</span>
@@ -510,139 +595,55 @@ export default function AdminOrdersPage() {
         </div>
       </form>
 
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>الزبون</th>
-              <th>المندوب</th>
-              <th>الحالة</th>
-              <th>المبلغ</th>
-              <th>الواصل</th>
-              <th>الباقي</th>
-              <th>الأولوية</th>
-              <th>تحصيل</th>
-              <th>إجراءات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {agentOrders.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="empty-hint">
-                  لا توجد طلبات لهذا المندوب في {day === "today" ? "اليوم" : "أمس"}
-                </td>
-              </tr>
-            ) : (
-              agentOrders.map((order) => {
-                const amount = Number(order.amount) || 0;
-                const paid = Number(order.paid ?? order.paid_amount ?? 0);
-                const remaining = Number.isFinite(Number(order.remaining))
-                  ? Number(order.remaining)
-                  : Number.isFinite(Number(order.remaining_amount))
-                    ? Number(order.remaining_amount)
-                    : Math.max(0, amount - (Number.isFinite(paid) ? paid : 0));
-                const meta = ORDER_STATUS[order.status] || ORDER_STATUS.registered;
-                const editable = canModify(order);
+      <div className="agent-orders-section">
+        <header className="agent-orders-section-header">
+          <div>
+            <h3>طلبات المندوب</h3>
+            <p>
+              اختر مندوبًا لعرض طلباته فقط، أو اترك الحقل فارغًا لعرض كل الطلبات
+            </p>
+          </div>
+          <select
+            value={filterAgentId}
+            onChange={(event) => setFilterAgentId(event.target.value)}
+          >
+            <option value="">كل المندوبين</option>
+            {agents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name}
+              </option>
+            ))}
+          </select>
+        </header>
 
-                return (
-                  <tr
-                    key={order.id}
-                    className={
-                      order.status === "cancelled" ? "order-row-cancelled" : ""
-                    }
-                  >
-                    <td>
-                      <div>{order.customer_name}</div>
-                      {order.customer_phone ? (
-                        <small dir="ltr">{order.customer_phone}</small>
-                      ) : null}
-                    </td>
-                    <td>{order.agent_name}</td>
-                    <td>
-                      <span
-                        className="status-pill"
-                        style={{
-                          background: `${meta.color}22`,
-                          color: meta.color,
-                          borderColor: `${meta.color}55`,
-                        }}
-                      >
-                        {meta.label}
-                      </span>
-                    </td>
-                    <td dir="ltr">{amount}</td>
-                    <td dir="ltr">{Number.isFinite(paid) ? paid : 0}</td>
-                    <td dir="ltr">{remaining}</td>
-                    <td>{order.priority || "-"}</td>
-                    <td>
-                      {order.status === "cancelled" ? (
-                        <span className="collect-done">—</span>
-                      ) : (
-                        <div className="collect-actions">
-                          {order.customer_paid ? (
-                            <span className="collect-done">
-                              تم استلام المبلغ من الزبون
-                            </span>
-                          ) : (
-                            <button
-                              className="secondary-button"
-                              type="button"
-                              onClick={() => collectFromCustomer(order.id)}
-                            >
-                              استلام المبلغ من الزبون
-                            </button>
-                          )}
-
-                          {order.status === "delivered" && !order.collected ? (
-                            <button
-                              className="primary-button"
-                              type="button"
-                              onClick={() => collect(order.id)}
-                            >
-                              تحصيل من المندوب
-                            </button>
-                          ) : order.collected ? (
-                            <span className="collect-done">
-                              تم التحصيل من المندوب
-                            </span>
-                          ) : null}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <div className="table-actions">
-                        {editable ? (
-                          <>
-                            <button
-                              className="secondary-button"
-                              type="button"
-                              onClick={() => startEdit(order)}
-                            >
-                              تعديل
-                            </button>
-                            <button
-                              className="danger-button"
-                              type="button"
-                              onClick={() => cancelOrder(order)}
-                            >
-                              إلغاء
-                            </button>
-                          </>
-                        ) : order.status === "cancelled" ? (
-                          <span className="collect-done">ملغى</span>
-                        ) : (
-                          <span className="collect-done">مغلق</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+        {filterAgentId ? (
+          <div className="agent-orders-banner">
+            <div>
+              <strong>طلبات المندوب: {selectedFilterAgent?.name}</strong>
+              <p>
+                الإجمالي {agentSummary.total} · مفتوحة {agentSummary.open} ·
+                مسلّمة {agentSummary.delivered} · راجعة {agentSummary.returned}
+                {agentSummary.cancelled
+                  ? ` · ملغاة ${agentSummary.cancelled}`
+                  : ""}
+              </p>
+            </div>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setFilterAgentId("")}
+            >
+              عرض الكل
+            </button>
+          </div>
+        ) : null}
       </div>
-        </>
+
+      {renderOrdersTable(
+        filterAgentId ? agentOrders : orders,
+        filterAgentId
+          ? `لا توجد طلبات لهذا المندوب في ${day === "today" ? "اليوم" : "أمس"}`
+          : `لا توجد طلبات في ${day === "today" ? "اليوم" : "أمس"}`
       )}
     </section>
   );

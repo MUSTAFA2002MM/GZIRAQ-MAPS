@@ -1140,6 +1140,36 @@
   background: rgba(21, 88, 224, 0.08);
 }
 
+.agent-orders-section {
+  margin-top: 8px;
+  margin-bottom: 16px;
+  padding-top: 8px;
+}
+
+.agent-orders-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.agent-orders-section-header h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.agent-orders-section-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.agent-orders-section-header select {
+  min-width: 220px;
+}
+
 .attendance-calendar-bar {
   margin-bottom: 18px;
   padding: 16px;
